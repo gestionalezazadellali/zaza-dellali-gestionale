@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-, "app/api/admin/invite-user/route.ts.disabled"  ],
+, "app/api/admin/invite-user/route.ts"  ],
   "exclude": ["node_modules"]
 }
