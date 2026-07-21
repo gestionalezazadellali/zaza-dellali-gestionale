@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 type BackupSettings = {
@@ -84,10 +84,16 @@ export default function BackupPage({
     setLoading(false);
   }
 
+  const loadBackupDataEffect = useEffectEvent(loadBackupData);
+
   useEffect(() => {
-    if (studioId) {
-      loadBackupData();
-    }
+    if (!studioId) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void loadBackupDataEffect();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [studioId]);
 
   function updateSetting<K extends keyof BackupSettings>(

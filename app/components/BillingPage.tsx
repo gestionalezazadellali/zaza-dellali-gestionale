@@ -1,6 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+} from "react";
 import { supabase } from "../../lib/supabase";
 import type { ClientRecord } from "./ClientsPage";
 import type { CaseRecord } from "./CasesPage";
@@ -161,8 +167,14 @@ export default function BillingPage({
     setLoading(false);
   }
 
+  const loadBillingDataEffect = useEffectEvent(loadBillingData);
+
   useEffect(() => {
-    loadBillingData();
+    const timeoutId = window.setTimeout(() => {
+      void loadBillingDataEffect();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   const unpaidInvoices = useMemo(

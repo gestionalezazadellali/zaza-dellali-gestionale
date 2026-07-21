@@ -1,6 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+} from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -95,12 +101,21 @@ export default function Home() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const hearingEvents = useMemo(
+    () =>
+      events.filter(
+        (event) =>
+          event.is_hearing === true && event.is_deadline !== true
+      ),
+    [events]
+  );
 
   const calendarHearings = useMemo(
     () =>
-      events
-        .filter((event) => event.is_hearing)
+      hearingEvents
         .map((event) => {
           const caseRecord = cases.find((item) => item.id === event.case_id);
 
@@ -134,7 +149,7 @@ export default function Home() {
           (a, b) =>
             new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
         ),
-    [events, cases]
+    [hearingEvents, cases]
   );
 
   useEffect(() => {
@@ -328,6 +343,8 @@ export default function Home() {
     }
   }
 
+  const refreshAllDataEffect = useEffectEvent(refreshAllData);
+
   useEffect(() => {
     if (!isLoggedIn) return;
 
@@ -369,7 +386,7 @@ export default function Home() {
       }
 
       setStudioId(profile?.studio_id ?? "");
-      await refreshAllData();
+      await refreshAllDataEffect();
       setLoading(false);
     }
 
@@ -422,6 +439,14 @@ export default function Home() {
     openCaseById(caseId);
   }
 
+  function openClientById(clientId: number) {
+    if (!clients.some((item) => item.id === clientId)) return;
+
+    setSelectedClientId(clientId);
+    setSelectedCase(null);
+    setActiveSection("Clienti");
+  }
+
   if (!sessionChecked) {
     return (
       <main className="grid min-h-screen place-items-center bg-neutral-950 text-white">
@@ -463,6 +488,7 @@ export default function Home() {
                 onClick={() => {
                   setActiveSection(item);
                   setMobileMenuOpen(false);
+                  setSelectedClientId(null);
 
                   if (item !== "Pratiche") {
                     setSelectedCase(null);
@@ -533,7 +559,7 @@ export default function Home() {
               <AdvancedDashboard
                 loading={loading}
                 counts={counts}
-                events={events}
+                events={hearingEvents}
                 onOpenCase={openActiveCaseById}
               />
             )}
@@ -564,11 +590,14 @@ export default function Home() {
 
             {activeSection === "Clienti" && (
               <ClientsPage
+                key={selectedClientId ?? "clients"}
                 clients={clients}
                 cases={cases as ClientCase[]}
                 studioId={studioId}
+                initialClientId={selectedClientId}
                 onClientsChanged={refreshAllData}
                 onOpenCase={openCaseById}
+                onClientDetailClose={() => setSelectedClientId(null)}
               />
             )}
 
@@ -598,6 +627,12 @@ export default function Home() {
                 <CaseDetail
                   studioId={studioId}
                   caseRecord={selectedCase}
+                  client={
+                    clients.find(
+                      (item) => item.id === selectedCase.client_contact_id
+                    ) ?? null
+                  }
+                  onOpenClient={openClientById}
                   events={
                     events.filter(
                       (event) => event.case_id === selectedCase.id
@@ -814,7 +849,10 @@ function StudioCalendar({
         day: "Giorno",
       }}
       events={events
-        .filter((event) => event.is_hearing)
+        .filter(
+          (event) =>
+            event.is_hearing === true && event.is_deadline !== true
+        )
         .map((event) => ({
           id: String(event.id),
           title: event.title,

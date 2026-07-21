@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useEffectEvent, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 type ProfileRecord = {
@@ -145,8 +145,14 @@ export default function UsersPage() {
     setLoading(false);
   }
 
+  const loadUsersEffect = useEffectEvent(loadUsers);
+
   useEffect(() => {
-    loadUsers();
+    const timeoutId = window.setTimeout(() => {
+      void loadUsersEffect();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   function openEdit(user: ProfileRecord) {

@@ -81,18 +81,23 @@ export default function ClientsPage({
   clients,
   cases,
   studioId,
+  initialClientId = null,
   onClientsChanged,
   onOpenCase,
+  onClientDetailClose,
 }: {
   clients: ClientRecord[];
   cases: ClientCase[];
   studioId: string;
+  initialClientId?: number | null;
   onClientsChanged: () => Promise<void>;
   onOpenCase: (caseId: number) => void;
+  onClientDetailClose?: () => void;
 }) {
   const [search, setSearch] = useState("");
-  const [selectedClient, setSelectedClient] =
-    useState<ClientRecord | null>(null);
+  const [selectedClient, setSelectedClient] = useState<ClientRecord | null>(
+    () => clients.find((client) => client.id === initialClientId) ?? null
+  );
   const [showForm, setShowForm] = useState(false);
   const [editingClient, setEditingClient] =
     useState<ClientRecord | null>(null);
@@ -264,7 +269,10 @@ export default function ClientsPage({
       <ClientDetail
         client={selectedClient}
         cases={selectedClientCases}
-        onBack={() => setSelectedClient(null)}
+        onBack={() => {
+          setSelectedClient(null);
+          onClientDetailClose?.();
+        }}
         onEdit={() => openEditClientForm(selectedClient)}
         onOpenCase={onOpenCase}
       />

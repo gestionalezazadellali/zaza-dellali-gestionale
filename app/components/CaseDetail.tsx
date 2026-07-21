@@ -1,6 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+} from "react";
 import { supabase } from "../../lib/supabase";
 import type { CaseRecord } from "./CasesPage";
 import CaseTitlesModule, {
@@ -19,6 +25,24 @@ export type CalendarEvent = {
   is_deadline: boolean;
   status: string | null;
   case_id: number | null;
+};
+
+export type CaseClientRecord = {
+  id: number;
+  display_name: string;
+  fiscal_code: string | null;
+  vat_number: string | null;
+  email: string | null;
+  pec: string | null;
+  phone: string | null;
+  mobile_phone: string | null;
+  organization: string | null;
+  job_title: string | null;
+  address: string | null;
+  city: string | null;
+  postal_code: string | null;
+  province: string | null;
+  notes: string | null;
 };
 
 type EventForm = {
@@ -64,12 +88,16 @@ const emptyAdjournmentForm: AdjournmentForm = {
 export default function CaseDetail({
   studioId,
   caseRecord,
+  client,
+  onOpenClient,
   events,
   onBack,
   onRefresh,
 }: {
   studioId: string;
   caseRecord: CaseRecord;
+  client: CaseClientRecord | null;
+  onOpenClient: (clientId: number) => void;
   events: CalendarEvent[];
   onBack: () => void;
   onRefresh: () => Promise<void>;
@@ -88,7 +116,10 @@ export default function CaseDetail({
   const hearings = useMemo(
     () =>
       events
-        .filter((event) => event.is_hearing)
+        .filter(
+          (event) =>
+            event.is_hearing === true && event.is_deadline !== true
+        )
         .sort(
           (a, b) =>
             new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
@@ -309,8 +340,14 @@ export default function CaseDetail({
     setActions((actionData ?? []) as EnforcementActionRecord[]);
   }
 
+  const loadTitlesAndActionsEffect = useEffectEvent(loadTitlesAndActions);
+
   useEffect(() => {
-    loadTitlesAndActions();
+    const timeoutId = window.setTimeout(() => {
+      void loadTitlesAndActionsEffect();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, [caseRecord.id]);
 
   async function refreshEverything() {
@@ -372,6 +409,25 @@ export default function CaseDetail({
     }).format(new Date(value));
   }
 
+  const relatedContact = Array.isArray(caseRecord.contacts)
+    ? caseRecord.contacts[0]
+    : caseRecord.contacts;
+
+  const relatedCounterparty = Array.isArray(caseRecord.counterparties)
+    ? caseRecord.counterparties[0]
+    : caseRecord.counterparties;
+
+  const clientName =
+    client?.display_name ||
+    relatedContact?.display_name ||
+    caseRecord.claimant_name_raw ||
+    "Cliente non indicato";
+
+  const counterpartyName =
+    relatedCounterparty?.name ||
+    caseRecord.defendant_name_raw ||
+    "Controparte non indicata";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
@@ -404,12 +460,39 @@ export default function CaseDetail({
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
         <p className="text-sm text-neutral-500">Pratica</p>
+
         <h3 className="mt-1 text-2xl font-semibold">
-          {caseRecord.title ||
-            caseRecord.claimant_name_raw ||
-            `Pratica n. ${caseRecord.id}`}
+          {caseRecord.title || `${clientName} c. ${counterpartyName}`}
         </h3>
-        <p className="mt-2 text-neutral-500">
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div className="rounded-xl border border-neutral-200 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Cliente
+            </p>
+
+            {client ? (
+              <button
+                type="button"
+                onClick={() => onOpenClient(client.id)}
+                className="mt-2 text-left font-semibold text-neutral-900 underline decoration-neutral-300 underline-offset-4 hover:decoration-neutral-900"
+              >
+                {clientName}
+              </button>
+            ) : (
+              <p className="mt-2 font-semibold">{clientName}</p>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-neutral-200 p-4">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">
+              Controparte
+            </p>
+            <p className="mt-2 font-semibold">{counterpartyName}</p>
+          </div>
+        </div>
+
+        <p className="mt-5 text-neutral-500">
           RG {caseRecord.rg_number || "non indicato"} ·{" "}
           {caseRecord.court_city || "Tribunale non indicato"}
         </p>
@@ -476,6 +559,7 @@ export default function CaseDetail({
           }}
         />
       )}
+
     </div>
   );
 }

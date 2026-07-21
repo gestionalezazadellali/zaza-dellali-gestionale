@@ -15,6 +15,7 @@ type CalendarEvent = {
   title: string;
   start_at: string;
   is_hearing: boolean;
+  is_deadline: boolean;
   case_id: number | null;
 };
 
@@ -104,7 +105,14 @@ export default function AdvancedDashboard({
       events
         .filter(
           (event) =>
-            event.is_hearing && new Date(event.start_at) >= new Date()
+            event.is_hearing === true &&
+            event.is_deadline !== true &&
+            new Date(event.start_at) >= new Date()
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.start_at).getTime() -
+            new Date(b.start_at).getTime()
         )
         .slice(0, 5),
     [events]
