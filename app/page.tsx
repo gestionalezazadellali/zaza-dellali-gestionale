@@ -23,9 +23,11 @@ import CaseDetail, {
 } from "./components/CaseDetail";
 import BillingPage from "./components/BillingPage";
 import UsersPage from "./components/UsersPage";
+import TrashCasesPage from "./components/TrashCasesPage";
 import BackupPage from "./components/BackupPage";
 import AdvancedDashboard from "./components/AdvancedDashboard";
 import GlobalSearchPage from "./components/GlobalSearchPage";
+import DeadlinesPage from "./components/DeadlinesPage";
 
 type DashboardCounts = {
   contacts: number;
@@ -47,13 +49,6 @@ type CalendarEvent = {
   case_id: number | null;
 };
 
-type SelectedEvent = {
-  title: string;
-  date: string;
-  type: string;
-  caseId: number | null;
-};
-
 const menuItems = [
   "Dashboard",
   "Ricerca",
@@ -65,6 +60,7 @@ const menuItems = [
   "Fatture",
   "Documenti",
   "Utenti",
+  "Cestino",
   "Backup",
   "Impostazioni",
 ];
@@ -98,11 +94,48 @@ export default function Home() {
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [cases, setCases] = useState<CaseRecord[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(
-    null
-  );
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const calendarHearings = useMemo(
+    () =>
+      events
+        .filter((event) => event.is_hearing)
+        .map((event) => {
+          const caseRecord = cases.find((item) => item.id === event.case_id);
+
+          if (!caseRecord) {
+            return { ...event, title: `UD ${event.title}` };
+          }
+
+          const contact = Array.isArray(caseRecord.contacts)
+            ? caseRecord.contacts[0]
+            : caseRecord.contacts;
+          const counterparty = Array.isArray(caseRecord.counterparties)
+            ? caseRecord.counterparties[0]
+            : caseRecord.counterparties;
+
+          const claimant =
+            contact?.last_name ||
+            contact?.display_name ||
+            caseRecord.claimant_name_raw ||
+            "Parte";
+          const defendant =
+            counterparty?.name ||
+            caseRecord.defendant_name_raw ||
+            "Controparte";
+
+          return {
+            ...event,
+            title: `UD ${claimant} c. ${defendant}`,
+          };
+        })
+        .sort(
+          (a, b) =>
+            new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+        ),
+    [events, cases]
+  );
 
   useEffect(() => {
     async function checkSession() {
@@ -129,7 +162,6 @@ export default function Home() {
       if (!session) {
         setActiveSection("Dashboard");
         setSelectedCase(null);
-        setSelectedEvent(null);
         setMobileMenuOpen(false);
         setClients([]);
         setCases([]);
@@ -210,6 +242,7 @@ export default function Home() {
           needs_review,
           contacts (
             display_name,
+            last_name,
             email,
             phone
           ),
@@ -218,6 +251,7 @@ export default function Home() {
           )
         `
       )
+      .is("deleted_at", null)
       .order("id", { ascending: false });
 
     if (error) throw error;
@@ -232,13 +266,16 @@ export default function Home() {
       deadlinesResult,
     ] = await Promise.all([
       supabase.from("contacts").select("*", { count: "exact", head: true }),
-      supabase.from("cases").select("*", { count: "exact", head: true }),
       supabase
-        .from("events")
+        .from("cases")
+        .select("*", { count: "exact", head: true })
+        .is("deleted_at", null),
+      supabase
+        .from("active_events")
         .select("*", { count: "exact", head: true })
         .eq("is_hearing", true),
       supabase
-        .from("events")
+        .from("active_events")
         .select("*", { count: "exact", head: true })
         .eq("is_deadline", true),
     ]);
@@ -261,7 +298,7 @@ export default function Home() {
 
   async function loadEvents() {
     const { data, error } = await supabase
-      .from("events")
+      .from("active_events")
       .select(
         "id, title, event_type, description, start_at, end_at, is_hearing, is_deadline, status, case_id"
       )
@@ -311,13 +348,23 @@ export default function Home() {
 
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("studio_id")
+        .select("studio_id, active, deleted_at")
         .eq("id", user.id)
         .single();
 
       if (profileError) {
         setErrorMessage(profileError.message);
         setLoading(false);
+        return;
+      }
+
+      if (!profile || !profile.active || profile.deleted_at) {
+        setLoginMessage(
+          "Account disattivato. Contatta l’amministratore dello studio."
+        );
+        setStudioId("");
+        setLoading(false);
+        await supabase.auth.signOut();
         return;
       }
 
@@ -328,14 +375,6 @@ export default function Home() {
 
     loadApplicationData();
   }, [isLoggedIn]);
-
-  const upcomingEvents = useMemo(
-    () =>
-      events
-        .filter((event) => new Date(event.start_at) >= new Date())
-        .slice(0, 8),
-    [events]
-  );
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -357,26 +396,12 @@ export default function Home() {
     await supabase.auth.signOut();
   }
 
-  function formatEventDate(value: string) {
-    return new Intl.DateTimeFormat("it-IT", {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
-  }
-
   function handleCalendarEventClick(info: EventClickArg) {
-    setSelectedEvent({
-      title: info.event.title,
-      date: info.event.start
-        ? formatEventDate(info.event.start.toISOString())
-        : "Data non disponibile",
-      type: (info.event.extendedProps.type as string | null) ?? "Evento",
-      caseId: info.event.extendedProps.caseId as number | null,
-    });
+    const caseId = Number(info.event.extendedProps.caseId || 0);
+
+    if (!caseId) return;
+
+    openActiveCaseById(caseId);
   }
 
   function openCaseById(caseId: number) {
@@ -388,8 +413,13 @@ export default function Home() {
     }
 
     setSelectedCase(foundCase);
-    setSelectedEvent(null);
     setActiveSection("Pratiche");
+  }
+
+  function openActiveCaseById(caseId: number) {
+    if (!cases.some((item) => item.id === caseId)) return;
+
+    openCaseById(caseId);
   }
 
   if (!sessionChecked) {
@@ -504,6 +534,7 @@ export default function Home() {
                 loading={loading}
                 counts={counts}
                 events={events}
+                onOpenCase={openActiveCaseById}
               />
             )}
 
@@ -516,8 +547,18 @@ export default function Home() {
 
             {activeSection === "Calendario" && (
               <CalendarPage
-                events={events}
+                events={calendarHearings}
                 onEventClick={handleCalendarEventClick}
+              />
+            )}
+
+            {activeSection === "Scadenze" && (
+              <DeadlinesPage
+                studioId={studioId}
+                events={events}
+                cases={cases}
+                onRefresh={refreshAllData}
+                onOpenCase={openCaseById}
               />
             )}
 
@@ -540,6 +581,13 @@ export default function Home() {
             )}
 
             {activeSection === "Utenti" && <UsersPage />}
+
+            {activeSection === "Cestino" && (
+              <TrashCasesPage
+                studioId={studioId}
+                onRefresh={refreshAllData}
+              />
+            )}
 
             {activeSection === "Backup" && (
               <BackupPage studioId={studioId} />
@@ -576,8 +624,10 @@ export default function Home() {
               "Calendario",
               "Clienti",
               "Pratiche",
+              "Scadenze",
               "Fatture",
               "Utenti",
+              "Cestino",
               "Backup",
             ].includes(activeSection) && <PlaceholderSection title={activeSection} />}
           </div>
@@ -658,15 +708,6 @@ export default function Home() {
         </div>
       )}
 
-      {selectedEvent && (
-        <EventModal
-          selectedEvent={selectedEvent}
-          onClose={() => setSelectedEvent(null)}
-          onOpenCase={() => {
-            if (selectedEvent.caseId) openCaseById(selectedEvent.caseId);
-          }}
-        />
-      )}
     </main>
   );
 }
@@ -731,88 +772,6 @@ function LoginPage({
   );
 }
 
-function DashboardContent({
-  loading,
-  counts,
-  events,
-  upcomingEvents,
-  formatEventDate,
-  onEventClick,
-}: {
-  loading: boolean;
-  counts: DashboardCounts;
-  events: CalendarEvent[];
-  upcomingEvents: CalendarEvent[];
-  formatEventDate: (value: string) => string;
-  onEventClick: (info: EventClickArg) => void;
-}) {
-  if (loading) return <div>Caricamento Dashboard...</div>;
-
-  return (
-    <div className="space-y-6">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[
-          ["Clienti", counts.contacts],
-          ["Pratiche", counts.cases],
-          ["Udienze", counts.hearings],
-          ["Scadenze", counts.deadlines],
-        ].map(([label, value]) => (
-          <article
-            key={label}
-            className="rounded-2xl border border-neutral-200 bg-white p-6"
-          >
-            <p className="text-sm text-neutral-500">{label}</p>
-            <p className="mt-3 text-4xl font-semibold">{value}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        <article className="rounded-2xl border border-neutral-200 bg-white p-6">
-          <h3 className="text-lg font-semibold">Calendario</h3>
-          <div className="mt-6">
-            <StudioCalendar
-              events={events}
-              onEventClick={onEventClick}
-              compact
-            />
-          </div>
-        </article>
-
-        <article className="rounded-2xl border border-neutral-200 bg-white p-6">
-          <h3 className="text-lg font-semibold">Prossimi eventi</h3>
-          <div className="mt-5 space-y-3">
-            {upcomingEvents.map((event) => (
-              <button
-                key={event.id}
-                type="button"
-                className="w-full rounded-xl border border-neutral-200 p-4 text-left"
-                onClick={() =>
-  onEventClick({
-    event: {
-      title: event.title,
-      start: new Date(event.start_at),
-      extendedProps: {
-        caseId: event.case_id,
-        type: event.event_type,
-      },
-    },
-  } as unknown as EventClickArg)
-}
-              >
-                <p className="font-medium">{event.title}</p>
-                <p className="mt-1 text-sm text-neutral-500">
-                  {formatEventDate(event.start_at)}
-                </p>
-              </button>
-            ))}
-          </div>
-        </article>
-      </section>
-    </div>
-  );
-}
-
 function CalendarPage({
   events,
   onEventClick,
@@ -854,60 +813,21 @@ function StudioCalendar({
         week: "Settimana",
         day: "Giorno",
       }}
-      events={events.map((event) => ({
-        id: String(event.id),
-        title: event.title,
-        start: event.start_at,
-        end: event.end_at ?? undefined,
-        backgroundColor: event.is_hearing
-          ? "#1f2937"
-          : event.is_deadline
-            ? "#9a3412"
-            : "#475569",
-        borderColor: "transparent",
-        extendedProps: {
-          caseId: event.case_id,
-          type: event.event_type,
-        },
-      }))}
+      events={events
+        .filter((event) => event.is_hearing)
+        .map((event) => ({
+          id: String(event.id),
+          title: event.title,
+          start: event.start_at,
+          end: event.end_at ?? undefined,
+          backgroundColor: "#1f2937",
+          borderColor: "transparent",
+          extendedProps: {
+            caseId: event.case_id,
+            type: event.event_type,
+          },
+        }))}
     />
-  );
-}
-
-function EventModal({
-  selectedEvent,
-  onClose,
-  onOpenCase,
-}: {
-  selectedEvent: SelectedEvent;
-  onClose: () => void;
-  onOpenCase: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6">
-        <h3 className="text-xl font-semibold">{selectedEvent.title}</h3>
-        <p className="mt-3 text-sm">{selectedEvent.date}</p>
-
-        <div className="mt-6 flex gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 rounded-xl border border-neutral-300 px-4 py-3"
-          >
-            Chiudi
-          </button>
-          <button
-            type="button"
-            onClick={onOpenCase}
-            disabled={!selectedEvent.caseId}
-            className="flex-1 rounded-xl bg-neutral-900 px-4 py-3 text-white disabled:opacity-40"
-          >
-            Apri pratica
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 

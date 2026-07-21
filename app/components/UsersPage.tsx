@@ -107,6 +107,9 @@ export default function UsersPage() {
   const [showEdit, setShowEdit] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deactivatingUserId, setDeactivatingUserId] = useState<string | null>(
+    null
+  );
   const [message, setMessage] = useState("");
 
   async function loadUsers() {
@@ -119,6 +122,7 @@ export default function UsersPage() {
         .select(
           "id, studio_id, first_name, last_name, display_name, role, job_title, email, pec, phone, fiscal_code, address, active"
         )
+        .is("deleted_at", null)
         .order("display_name", { ascending: true }),
 
       supabase
@@ -322,6 +326,59 @@ export default function UsersPage() {
     setSaving(false);
   }
 
+  async function handleDeactivate(user: ProfileRecord) {
+    setDeactivatingUserId(user.id);
+    setMessage("");
+
+    try {
+      const {
+        data: { user: authenticatedUser },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+
+      if (!authenticatedUser) {
+        setMessage("Utente non autenticato.");
+        return;
+      }
+
+      if (authenticatedUser.id === user.id) {
+        setMessage("Non puoi disattivare il tuo stesso account.");
+        return;
+      }
+
+      const confirmed = window.confirm(
+        "Vuoi disattivare questo utente? Non potrà più accedere e potrà essere ripristinato dal cestino."
+      );
+
+      if (!confirmed) return;
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          active: false,
+          deleted_at: new Date().toISOString(),
+          deleted_by: authenticatedUser.id,
+          delete_reason: "Account disattivato dalla sezione Utenti",
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      await loadUsers();
+      setMessage("Utente disattivato correttamente.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Errore: ${error.message}`
+          : "Errore durante la disattivazione dell’utente."
+      );
+    } finally {
+      setDeactivatingUserId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -402,13 +459,25 @@ export default function UsersPage() {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => openEdit(user)}
-                  className="rounded-xl border border-neutral-300 px-4 py-2 text-sm"
-                >
-                  Modifica accessi
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(user)}
+                    className="rounded-xl border border-neutral-300 px-4 py-2 text-sm"
+                  >
+                    Modifica accessi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeactivate(user)}
+                    disabled={deactivatingUserId === user.id}
+                    className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deactivatingUserId === user.id
+                      ? "Disattivazione..."
+                      : "Disattiva"}
+                  </button>
+                </div>
               </div>
             </article>
           );

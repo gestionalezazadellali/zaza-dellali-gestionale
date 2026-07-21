@@ -36,11 +36,13 @@ export type CaseRecord = {
   contacts:
     | {
         display_name: string;
+        last_name: string | null;
         email: string | null;
         phone: string | null;
       }
     | {
         display_name: string;
+        last_name: string | null;
         email: string | null;
         phone: string | null;
       }[]
@@ -134,19 +136,24 @@ export default function CasesPage({
   const [editingCase, setEditingCase] = useState<CaseRecord | null>(null);
   const [form, setForm] = useState<CaseForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [deletingCaseId, setDeletingCaseId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
   const filteredCases = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("it");
 
-    if (!query) return cases;
+    if (query.length < 2) return [];
 
     return cases.filter((item) => {
       const client = getClientName(item);
+      const contact = Array.isArray(item.contacts)
+        ? item.contacts[0]
+        : item.contacts;
       const counterparty = getCounterpartyName(item);
 
       return [
         client,
+        contact?.last_name,
         counterparty,
         item.title,
         item.rg_number,
@@ -324,6 +331,47 @@ export default function CasesPage({
     }
   }
 
+  async function handleDelete(item: CaseRecord) {
+    const confirmed = window.confirm(
+      "Vuoi spostare questa pratica nel cestino? Potrai ripristinarla successivamente."
+    );
+
+    if (!confirmed) return;
+
+    setDeletingCaseId(item.id);
+    setMessage("");
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+      if (!user) throw new Error("Utente non autenticato.");
+
+      const { error } = await supabase
+        .from("cases")
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: user.id,
+          delete_reason: "Eliminata dalla sezione Pratiche",
+        })
+        .eq("id", item.id);
+
+      if (error) throw error;
+
+      await onRefresh();
+      setMessage("Pratica spostata nel cestino.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Errore durante l’eliminazione."
+      );
+    } finally {
+      setDeletingCaseId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -361,7 +409,9 @@ export default function CasesPage({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-neutral-500">
-          Pratiche trovate: {filteredCases.length}
+          {search.trim().length < 2
+            ? "Inserisci almeno due caratteri per cercare una pratica."
+            : `Pratiche trovate: ${filteredCases.length}`}
         </p>
         {message && <p className="text-sm text-neutral-600">{message}</p>}
       </div>
@@ -399,13 +449,23 @@ export default function CasesPage({
                 <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs capitalize text-neutral-700">
                   {(item.status || "stato_non_indicato").replaceAll("_", " ")}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => openEditForm(item)}
-                  className="rounded-xl border border-neutral-300 px-3 py-2 text-xs"
-                >
-                  Modifica
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openEditForm(item)}
+                    className="rounded-xl border border-neutral-300 px-3 py-2 text-xs"
+                  >
+                    Modifica
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(item)}
+                    disabled={deletingCaseId === item.id}
+                    className="rounded-xl bg-red-600 px-3 py-2 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingCaseId === item.id ? "Eliminazione..." : "Elimina"}
+                  </button>
+                </div>
               </div>
             </div>
           </article>

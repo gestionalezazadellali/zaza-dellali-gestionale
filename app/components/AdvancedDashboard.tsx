@@ -15,7 +15,6 @@ type CalendarEvent = {
   title: string;
   start_at: string;
   is_hearing: boolean;
-  is_deadline: boolean;
   case_id: number | null;
 };
 
@@ -45,10 +44,12 @@ export default function AdvancedDashboard({
   counts,
   events,
   loading,
+  onOpenCase,
 }: {
   counts: DashboardCounts;
   events: CalendarEvent[];
   loading: boolean;
+  onOpenCase: (caseId: number) => void;
 }) {
   const [caseRows, setCaseRows] = useState<CaseStatusRow[]>([]);
   const [invoiceRows, setInvoiceRows] = useState<InvoiceRow[]>([]);
@@ -60,7 +61,10 @@ export default function AdvancedDashboard({
     async function loadAdvancedData() {
       const [casesResult, invoicesResult, titlesResult, backupResult] =
         await Promise.all([
-          supabase.from("cases").select("status"),
+          supabase
+            .from("cases")
+            .select("status")
+            .is("deleted_at", null),
           supabase
             .from("invoices")
             .select("total_amount, paid_amount, status"),
@@ -101,17 +105,6 @@ export default function AdvancedDashboard({
         .filter(
           (event) =>
             event.is_hearing && new Date(event.start_at) >= new Date()
-        )
-        .slice(0, 5),
-    [events]
-  );
-
-  const upcomingDeadlines = useMemo(
-    () =>
-      events
-        .filter(
-          (event) =>
-            event.is_deadline && new Date(event.start_at) >= new Date()
         )
         .slice(0, 5),
     [events]
@@ -180,13 +173,9 @@ export default function AdvancedDashboard({
         />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-3">
+      <section className="grid gap-6 xl:grid-cols-2">
         <Panel title="Prossime udienze">
-          <EventList events={upcomingHearings} />
-        </Panel>
-
-        <Panel title="Prossime scadenze">
-          <EventList events={upcomingDeadlines} />
+          <EventList events={upcomingHearings} onOpenCase={onOpenCase} />
         </Panel>
 
         <Panel title="Backup">
@@ -307,7 +296,13 @@ function Panel({
   );
 }
 
-function EventList({ events }: { events: CalendarEvent[] }) {
+function EventList({
+  events,
+  onOpenCase,
+}: {
+  events: CalendarEvent[];
+  onOpenCase: (caseId: number) => void;
+}) {
   if (events.length === 0) {
     return (
       <p className="text-sm text-neutral-500">
@@ -319,15 +314,20 @@ function EventList({ events }: { events: CalendarEvent[] }) {
   return (
     <div className="space-y-3">
       {events.map((event) => (
-        <div
+        <button
           key={event.id}
-          className="rounded-xl border border-neutral-200 p-4"
+          type="button"
+          disabled={!event.case_id}
+          onClick={() => {
+            if (event.case_id) onOpenCase(event.case_id);
+          }}
+          className="w-full rounded-xl border border-neutral-200 p-4 text-left disabled:cursor-default"
         >
           <p className="font-medium">{event.title}</p>
           <p className="mt-1 text-sm text-neutral-500">
             {formatDateTime(event.start_at)}
           </p>
-        </div>
+        </button>
       ))}
     </div>
   );

@@ -22,7 +22,7 @@ export type CalendarEvent = {
 };
 
 type EventForm = {
-  kind: "hearing" | "deadline" | "activity";
+  kind: "hearing" | "activity";
   title: string;
   description: string;
   date: string;
@@ -80,6 +80,7 @@ export default function CaseDetail({
   const [adjournmentForm, setAdjournmentForm] =
     useState<AdjournmentForm>(emptyAdjournmentForm);
   const [saving, setSaving] = useState(false);
+  const [deletingEventId, setDeletingEventId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [titles, setTitles] = useState<CaseTitleRecord[]>([]);
   const [actions, setActions] = useState<EnforcementActionRecord[]>([]);
@@ -88,17 +89,6 @@ export default function CaseDetail({
     () =>
       events
         .filter((event) => event.is_hearing)
-        .sort(
-          (a, b) =>
-            new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
-        ),
-    [events]
-  );
-
-  const deadlines = useMemo(
-    () =>
-      events
-        .filter((event) => event.is_deadline)
         .sort(
           (a, b) =>
             new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
@@ -147,17 +137,11 @@ export default function CaseDetail({
     setMessage("");
 
     const isHearing = eventForm.kind === "hearing";
-    const isDeadline = eventForm.kind === "deadline";
 
     const { error } = await supabase.from("events").insert({
       studio_id: studioId,
       case_id: caseRecord.id,
-      event_type:
-        eventForm.kind === "hearing"
-          ? "UDIENZA"
-          : eventForm.kind === "deadline"
-            ? "SCADENZA"
-            : "ATTIVITA",
+      event_type: isHearing ? "UDIENZA" : "ATTIVITA",
       title: eventForm.title.trim(),
       description: eventForm.description.trim() || null,
       start_at: makeIso(eventForm.date, eventForm.time),
@@ -166,7 +150,7 @@ export default function CaseDetail({
         : null,
       all_day: false,
       is_hearing: isHearing,
-      is_deadline: isDeadline,
+      is_deadline: false,
       status: "aperto",
       source: "inserimento_manuale",
     });
@@ -182,26 +166,6 @@ export default function CaseDetail({
     setShowEventForm(false);
     setMessage("Evento aggiunto correttamente.");
     setSaving(false);
-  }
-
-  async function markDeadlineCompleted(eventId: number) {
-    setMessage("");
-
-    const { error } = await supabase
-      .from("events")
-      .update({
-        status: "completato",
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", eventId);
-
-    if (error) {
-      setMessage(`Errore: ${error.message}`);
-      return;
-    }
-
-    await refreshEverything();
-    setMessage("Scadenza completata.");
   }
 
   function openAdjournment(event: CalendarEvent) {
@@ -353,6 +317,50 @@ export default function CaseDetail({
     await Promise.all([onRefresh(), loadTitlesAndActions()]);
   }
 
+  async function handleDeleteEvent(item: CalendarEvent) {
+    const confirmed = window.confirm(
+      "Vuoi spostare questo evento nel cestino? Potrai ripristinarlo successivamente."
+    );
+
+    if (!confirmed) return;
+
+    setDeletingEventId(item.id);
+    setMessage("");
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+      if (!user) throw new Error("Utente non autenticato.");
+
+      const { error } = await supabase
+        .from("events")
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: user.id,
+          delete_reason: "Eliminato dalla scheda pratica",
+        })
+        .eq("id", item.id)
+        .eq("studio_id", studioId);
+
+      if (error) throw error;
+
+      await refreshEverything();
+      setMessage("Evento spostato nel cestino.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Errore durante l’eliminazione dell’evento."
+      );
+    } finally {
+      setDeletingEventId(null);
+    }
+  }
+
   function formatDate(value: string) {
     return new Intl.DateTimeFormat("it-IT", {
       weekday: "short",
@@ -384,7 +392,7 @@ export default function CaseDetail({
           }}
           className="rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
         >
-          Nuova udienza o scadenza
+          Nuova udienza
         </button>
       </div>
 
@@ -414,26 +422,21 @@ export default function CaseDetail({
         <InfoCard label="Stato" value={caseRecord.status} />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <EventPanel
-          title={`Udienze (${hearings.length})`}
-          events={hearings}
-          formatDate={formatDate}
-          onAdjourn={openAdjournment}
-        />
-
-        <DeadlinePanel
-          title={`Scadenze (${deadlines.length})`}
-          events={deadlines}
-          formatDate={formatDate}
-          onComplete={markDeadlineCompleted}
-        />
-      </section>
+      <EventPanel
+        title={`Udienze (${hearings.length})`}
+        events={hearings}
+        formatDate={formatDate}
+        onAdjourn={openAdjournment}
+        onDelete={handleDeleteEvent}
+        deletingEventId={deletingEventId}
+      />
 
       <EventPanel
         title={`Altre attività (${activities.length})`}
         events={activities}
         formatDate={formatDate}
+        onDelete={handleDeleteEvent}
+        deletingEventId={deletingEventId}
       />
 
       <CaseTitlesModule
@@ -482,11 +485,15 @@ function EventPanel({
   events,
   formatDate,
   onAdjourn,
+  onDelete,
+  deletingEventId,
 }: {
   title: string;
   events: CalendarEvent[];
   formatDate: (value: string) => string;
   onAdjourn?: (event: CalendarEvent) => void;
+  onDelete: (event: CalendarEvent) => Promise<void>;
+  deletingEventId: number | null;
 }) {
   return (
     <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
@@ -525,64 +532,16 @@ function EventPanel({
                       Registra rinvio
                     </button>
                   )}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </article>
-  );
-}
-
-function DeadlinePanel({
-  title,
-  events,
-  formatDate,
-  onComplete,
-}: {
-  title: string;
-  events: CalendarEvent[];
-  formatDate: (value: string) => string;
-  onComplete: (eventId: number) => Promise<void>;
-}) {
-  return (
-    <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <h4 className="text-lg font-semibold">{title}</h4>
-
-      <div className="mt-5 space-y-3">
-        {events.length === 0 ? (
-          <p className="text-sm text-neutral-500">Nessuna scadenza presente.</p>
-        ) : (
-          events.map((event) => (
-            <div
-              key={event.id}
-              className="rounded-xl border border-neutral-200 p-4"
-            >
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="font-medium">{event.title}</p>
-                  <p className="mt-1 text-sm text-neutral-500">
-                    {formatDate(event.start_at)}
-                  </p>
-                  {event.description && (
-                    <p className="mt-2 text-sm text-neutral-600">
-                      {event.description}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex flex-col items-start gap-2 sm:items-end">
-                  <StatusBadge status={event.status} />
-                  {event.status !== "completato" && (
-                    <button
-                      type="button"
-                      onClick={() => onComplete(event.id)}
-                      className="rounded-lg bg-neutral-900 px-3 py-2 text-xs text-white"
-                    >
-                      Segna completata
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => onDelete(event)}
+                    disabled={deletingEventId === event.id}
+                    className="rounded-lg bg-red-600 px-3 py-2 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingEventId === event.id
+                      ? "Eliminazione..."
+                      : "Elimina"}
+                  </button>
                 </div>
               </div>
             </div>
@@ -618,7 +577,7 @@ function EventFormModal({
           <div>
             <p className="text-sm text-neutral-500">Calendario pratica</p>
             <h3 className="mt-1 text-xl font-semibold">
-              Nuova udienza, scadenza o attività
+              Nuova udienza o attività
             </h3>
           </div>
           <button
@@ -639,7 +598,6 @@ function EventFormModal({
               className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-3"
             >
               <option value="hearing">Udienza</option>
-              <option value="deadline">Scadenza</option>
               <option value="activity">Altra attività</option>
             </select>
           </label>
