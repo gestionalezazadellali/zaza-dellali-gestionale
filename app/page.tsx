@@ -102,6 +102,7 @@ export default function Home() {
     null
   );
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     async function checkSession() {
@@ -129,6 +130,7 @@ export default function Home() {
         setActiveSection("Dashboard");
         setSelectedCase(null);
         setSelectedEvent(null);
+        setMobileMenuOpen(false);
         setClients([]);
         setCases([]);
         setCounterparties([]);
@@ -415,7 +417,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-neutral-100 text-neutral-900">
       <div className="flex min-h-screen">
-        <aside className="hidden w-72 flex-col border-r border-neutral-200 bg-white lg:flex">
+        <<aside className="flex w-72 shrink-0 flex-col border-r border-neutral-200 bg-white">
           <div className="border-b border-neutral-200 px-6 py-6">
             <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">
               Studio Legale
@@ -430,7 +432,11 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   setActiveSection(item);
-                  if (item !== "Pratiche") setSelectedCase(null);
+                  setMobileMenuOpen(false);
+
+                  if (item !== "Pratiche") {
+                    setSelectedCase(null);
+                  }
                 }}
                 className={`w-full rounded-xl px-4 py-3 text-left text-sm transition ${
                   activeSection === item
@@ -456,12 +462,37 @@ export default function Home() {
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="border-b border-neutral-200 bg-white px-6 py-5">
-            <p className="text-sm text-neutral-500">Gestionale dello studio</p>
-            <h2 className="text-2xl font-semibold">{activeSection}</h2>
+          <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-neutral-300 bg-white text-2xl lg:hidden"
+                aria-label="Apri menu"
+              >
+                ☰
+              </button>
+
+              <div className="min-w-0">
+                <p className="truncate text-xs text-neutral-500 sm:text-sm">
+                  Gestionale dello studio
+                </p>
+                <h2 className="truncate text-xl font-semibold sm:text-2xl">
+                  {activeSection}
+                </h2>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-xl border border-neutral-300 px-3 py-2 text-sm lg:hidden"
+            >
+              Esci
+            </button>
           </header>
 
-          <div className="p-6">
+          <div className="p-3 sm:p-6">
             {errorMessage && (
               <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                 {errorMessage}
@@ -552,6 +583,80 @@ export default function Home() {
           </div>
         </section>
       </div>
+
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[100] lg:hidden">
+          <button
+            type="button"
+            aria-label="Chiudi menu"
+            onClick={() => setMobileMenuOpen(false)}
+            className="absolute inset-0 bg-black/50"
+          />
+
+          <aside className="relative flex h-full w-[85%] max-w-sm flex-col bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-neutral-200 px-5 py-5">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">
+                  Studio Legale
+                </p>
+                <h1 className="mt-2 text-xl font-semibold">
+                  Zaza Dell’Ali
+                </h1>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-neutral-300 text-xl"
+                aria-label="Chiudi menu"
+              >
+                ×
+              </button>
+            </div>
+
+            <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+              {menuItems.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => {
+                    setActiveSection(item);
+                    setMobileMenuOpen(false);
+
+                    if (item !== "Pratiche") {
+                      setSelectedCase(null);
+                    }
+                  }}
+                  className={`w-full rounded-xl px-4 py-3 text-left text-sm transition ${
+                    activeSection === item
+                      ? "bg-neutral-900 text-white"
+                      : "text-neutral-700 hover:bg-neutral-100"
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+            </nav>
+
+            <div className="border-t border-neutral-200 p-4">
+              <p className="truncate text-xs text-neutral-500">
+                {userEmail}
+              </p>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  setMobileMenuOpen(false);
+                  await handleLogout();
+                }}
+                className="mt-3 w-full rounded-xl border border-neutral-300 px-4 py-3 text-sm"
+              >
+                Esci
+              </button>
+            </div>
+          </aside>
+        </div>
+      )}
 
       {selectedEvent && (
         <EventModal
@@ -683,17 +788,17 @@ function DashboardContent({
                 type="button"
                 className="w-full rounded-xl border border-neutral-200 p-4 text-left"
                 onClick={() =>
-  onEventClick({
-    event: {
-      title: event.title,
-      start: new Date(event.start_at),
-      extendedProps: {
-        caseId: event.case_id,
-        type: event.event_type,
-      },
-    },
-  } as unknown as EventClickArg)
-}
+                  onEventClick({
+                    event: {
+                      title: event.title,
+                      start: new Date(event.start_at),
+                      extendedProps: {
+                        caseId: event.case_id,
+                        type: event.event_type,
+                      },
+                    },
+                  } as EventClickArg)
+                }
               >
                 <p className="font-medium">{event.title}</p>
                 <p className="mt-1 text-sm text-neutral-500">
