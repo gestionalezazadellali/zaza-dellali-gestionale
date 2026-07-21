@@ -417,7 +417,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-neutral-100 text-neutral-900">
       <div className="flex min-h-screen">
-        <<aside className="flex w-72 shrink-0 flex-col border-r border-neutral-200 bg-white">
+        <aside className="flex w-72 shrink-0 flex-col border-r border-neutral-200 bg-white">
           <div className="border-b border-neutral-200 px-6 py-6">
             <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">
               Studio Legale
@@ -788,17 +788,17 @@ function DashboardContent({
                 type="button"
                 className="w-full rounded-xl border border-neutral-200 p-4 text-left"
                 onClick={() =>
-                  onEventClick({
-                    event: {
-                      title: event.title,
-                      start: new Date(event.start_at),
-                      extendedProps: {
-                        caseId: event.case_id,
-                        type: event.event_type,
-                      },
-                    },
-                  } as EventClickArg)
-                }
+  onEventClick({
+    event: {
+      title: event.title,
+      start: new Date(event.start_at),
+      extendedProps: {
+        caseId: event.case_id,
+        type: event.event_type,
+      },
+    },
+  } as unknown as EventClickArg)
+}
               >
                 <p className="font-medium">{event.title}</p>
                 <p className="mt-1 text-sm text-neutral-500">
