@@ -57,6 +57,7 @@ export default function GlobalSearchPage({
         .or(
           `display_name.ilike.${pattern},fiscal_code.ilike.${pattern},email.ilike.${pattern},pec.ilike.${pattern},phone.ilike.${pattern},organization.ilike.${pattern}`
         )
+        .is("deleted_at", null)
         .limit(20),
 
       supabase

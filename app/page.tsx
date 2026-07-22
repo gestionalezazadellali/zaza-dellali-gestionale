@@ -215,6 +215,7 @@ export default function Home() {
           needs_review
         `
       )
+      .is("deleted_at", null)
       .order("display_name", { ascending: true });
 
     if (error) throw error;
@@ -280,7 +281,10 @@ export default function Home() {
       hearingsResult,
       deadlinesResult,
     ] = await Promise.all([
-      supabase.from("contacts").select("*", { count: "exact", head: true }),
+      supabase
+        .from("contacts")
+        .select("*", { count: "exact", head: true })
+        .is("deleted_at", null),
       supabase
         .from("cases")
         .select("*", { count: "exact", head: true })

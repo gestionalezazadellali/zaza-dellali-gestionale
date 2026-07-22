@@ -103,6 +103,7 @@ export default function ClientsPage({
     useState<ClientRecord | null>(null);
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [deletingClientId, setDeletingClientId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
 
   const filteredClients = useMemo(() => {
@@ -264,18 +265,120 @@ export default function ClientsPage({
     }
   }
 
+  async function handleDeleteClient(client: ClientRecord) {
+    setMessage("");
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) {
+      setMessage(`Errore: ${userError.message}`);
+      return;
+    }
+
+    if (!user) {
+      setMessage("Errore: utente non autenticato.");
+      return;
+    }
+
+    const { data: permission, error: permissionError } = await supabase
+      .from("user_permissions")
+      .select("can_edit_clients")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (permissionError) {
+      setMessage(`Errore: ${permissionError.message}`);
+      return;
+    }
+
+    if (!permission?.can_edit_clients) {
+      setMessage("Non disponi del permesso per eliminare i clienti.");
+      return;
+    }
+
+    const activeCases = cases.filter(
+      (caseRecord) =>
+        caseRecord.client_contact_id === client.id &&
+        !["definito", "archiviato"].includes(caseRecord.status ?? "")
+    );
+
+    const linkedCasesWarning =
+      activeCases.length > 0
+        ? `\n\nIl cliente ha ${activeCases.length} pratiche attive. Le pratiche resteranno esistenti e manterranno il collegamento storico.`
+        : "\n\nLe pratiche già collegate resteranno esistenti e manterranno il collegamento storico.";
+
+    const confirmed = window.confirm(
+      `Vuoi spostare il cliente “${client.display_name}” nel cestino?${linkedCasesWarning}`
+    );
+
+    if (!confirmed) return;
+
+    setDeletingClientId(client.id);
+
+    try {
+      const { error } = await supabase
+        .from("contacts")
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: user.id,
+          delete_reason: "Eliminato dalla scheda cliente",
+        })
+        .eq("id", client.id)
+        .eq("studio_id", studioId);
+
+      if (error) throw error;
+
+      await onClientsChanged();
+      setSelectedClient(null);
+      onClientDetailClose?.();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Errore: ${error.message}`
+          : "Errore durante l’eliminazione del cliente."
+      );
+    } finally {
+      setDeletingClientId(null);
+    }
+  }
+
+  const clientFormModal = showForm ? (
+    <ClientFormModal
+      title={editingClient ? "Modifica anagrafica" : "Nuovo cliente"}
+      form={form}
+      saving={saving}
+      message={message}
+      onChange={updateForm}
+      onSubmit={handleSaveClient}
+      onClose={() => {
+        setShowForm(false);
+        setEditingClient(null);
+        setMessage("");
+      }}
+    />
+  ) : null;
+
   if (selectedClient) {
     return (
-      <ClientDetail
-        client={selectedClient}
-        cases={selectedClientCases}
-        onBack={() => {
-          setSelectedClient(null);
-          onClientDetailClose?.();
-        }}
-        onEdit={() => openEditClientForm(selectedClient)}
-        onOpenCase={onOpenCase}
-      />
+      <>
+        <ClientDetail
+          client={selectedClient}
+          cases={selectedClientCases}
+          onBack={() => {
+            setSelectedClient(null);
+            onClientDetailClose?.();
+          }}
+          onEdit={() => openEditClientForm(selectedClient)}
+          onDelete={() => handleDeleteClient(selectedClient)}
+          deleting={deletingClientId === selectedClient.id}
+          message={message}
+          onOpenCase={onOpenCase}
+        />
+        {clientFormModal}
+      </>
     );
   }
 
@@ -373,25 +476,7 @@ export default function ClientsPage({
         })}
       </section>
 
-      {showForm && (
-        <ClientFormModal
-          title={
-            editingClient
-              ? "Modifica anagrafica"
-              : "Nuovo cliente"
-          }
-          form={form}
-          saving={saving}
-          message={message}
-          onChange={updateForm}
-          onSubmit={handleSaveClient}
-          onClose={() => {
-            setShowForm(false);
-            setEditingClient(null);
-            setMessage("");
-          }}
-        />
-      )}
+      {clientFormModal}
     </div>
   );
 }
@@ -401,12 +486,18 @@ function ClientDetail({
   cases,
   onBack,
   onEdit,
+  onDelete,
+  deleting,
+  message,
   onOpenCase,
 }: {
   client: ClientRecord;
   cases: ClientCase[];
   onBack: () => void;
   onEdit: () => void;
+  onDelete: () => Promise<void>;
+  deleting: boolean;
+  message: string;
   onOpenCase: (caseId: number) => void;
 }) {
   return (
@@ -427,7 +518,22 @@ function ClientDetail({
         >
           Modifica anagrafica
         </button>
+
+        <button
+          type="button"
+          onClick={() => void onDelete()}
+          disabled={deleting}
+          className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {deleting ? "Eliminazione..." : "Elimina cliente"}
+        </button>
       </div>
+
+      {message && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-4 text-sm">
+          {message}
+        </div>
+      )}
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
         <p className="text-sm text-neutral-500">Cliente</p>
