@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 export type ClientOption = {
@@ -120,24 +120,38 @@ export default function CasesPage({
   clients,
   counterparties,
   loading,
+  initialClientId = null,
   onRefresh,
   onOpenCase,
+  onInitialClientHandled,
 }: {
   studioId: string;
   cases: CaseRecord[];
   clients: ClientOption[];
   counterparties: CounterpartyOption[];
   loading: boolean;
+  initialClientId?: number | null;
   onRefresh: () => Promise<void>;
   onOpenCase: (caseRecord: CaseRecord) => void;
+  onInitialClientHandled?: () => void;
 }) {
   const [search, setSearch] = useState("");
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(() => initialClientId !== null);
   const [editingCase, setEditingCase] = useState<CaseRecord | null>(null);
-  const [form, setForm] = useState<CaseForm>(emptyForm);
+  const [form, setForm] = useState<CaseForm>(() => ({
+    ...emptyForm,
+    client_contact_id:
+      initialClientId === null ? "" : String(initialClientId),
+  }));
   const [saving, setSaving] = useState(false);
   const [deletingCaseId, setDeletingCaseId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (initialClientId !== null) {
+      onInitialClientHandled?.();
+    }
+  }, [initialClientId, onInitialClientHandled]);
 
   const filteredCases = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("it");

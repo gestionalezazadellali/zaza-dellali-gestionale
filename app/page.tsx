@@ -102,6 +102,7 @@ export default function Home() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [newCaseClientId, setNewCaseClientId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const hearingEvents = useMemo(
@@ -451,6 +452,13 @@ export default function Home() {
     setActiveSection("Clienti");
   }
 
+  function openNewCaseForClient(clientId: number) {
+    setSelectedCase(null);
+    setSelectedClientId(null);
+    setNewCaseClientId(clientId);
+    setActiveSection("Pratiche");
+  }
+
   if (!sessionChecked) {
     return (
       <main className="grid min-h-screen place-items-center bg-neutral-950 text-white">
@@ -601,6 +609,7 @@ export default function Home() {
                 initialClientId={selectedClientId}
                 onClientsChanged={refreshAllData}
                 onOpenCase={openCaseById}
+                onAddCase={openNewCaseForClient}
                 onClientDetailClose={() => setSelectedClientId(null)}
               />
             )}
@@ -652,8 +661,10 @@ export default function Home() {
                   clients={clients as ClientOption[]}
                   counterparties={counterparties}
                   loading={loading}
+                  initialClientId={newCaseClientId}
                   onRefresh={refreshAllData}
                   onOpenCase={setSelectedCase}
+                  onInitialClientHandled={() => setNewCaseClientId(null)}
                 />
               ))}
 

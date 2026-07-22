@@ -84,6 +84,7 @@ export default function ClientsPage({
   initialClientId = null,
   onClientsChanged,
   onOpenCase,
+  onAddCase,
   onClientDetailClose,
 }: {
   clients: ClientRecord[];
@@ -92,6 +93,7 @@ export default function ClientsPage({
   initialClientId?: number | null;
   onClientsChanged: () => Promise<void>;
   onOpenCase: (caseId: number) => void;
+  onAddCase: (clientId: number) => void;
   onClientDetailClose?: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -376,6 +378,7 @@ export default function ClientsPage({
           deleting={deletingClientId === selectedClient.id}
           message={message}
           onOpenCase={onOpenCase}
+          onAddCase={() => onAddCase(selectedClient.id)}
         />
         {clientFormModal}
       </>
@@ -490,6 +493,7 @@ function ClientDetail({
   deleting,
   message,
   onOpenCase,
+  onAddCase,
 }: {
   client: ClientRecord;
   cases: ClientCase[];
@@ -499,6 +503,7 @@ function ClientDetail({
   deleting: boolean;
   message: string;
   onOpenCase: (caseId: number) => void;
+  onAddCase: () => void;
 }) {
   return (
     <div className="space-y-6">
@@ -638,6 +643,7 @@ function ClientDetail({
 
           <button
             type="button"
+            onClick={onAddCase}
             className="rounded-xl bg-neutral-900 px-4 py-3 text-sm text-white"
           >
             Aggiungi pratica
