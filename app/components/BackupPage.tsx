@@ -32,19 +32,6 @@ type BackupRun = {
   error_message: string | null;
 };
 
-type BackupApiResponse = {
-  success?: boolean;
-  error?: string;
-  fileName?: string;
-  content?: string;
-  sha256?: string;
-  sha256Content?: string;
-  manifestFileName?: string;
-  manifestContent?: string;
-  integrityReportFileName?: string;
-  integrityReportContent?: string;
-};
-
 export default function BackupPage({
   studioId,
 }: {
@@ -175,78 +162,74 @@ export default function BackupPage({
     }
 
     try {
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession();
-      if (sessionError || !session?.access_token) {
-        throw new Error("Sessione non valida per la creazione del backup.");
+      const tableNames = [
+        "studios",
+        "profiles",
+        "user_permissions",
+        "contacts",
+        "counterparties",
+        "cases",
+        "events",
+        "hearing_updates",
+        "case_activities",
+        "case_documents",
+        "case_titles",
+        "enforcement_actions",
+        "invoices",
+        "payments",
+        "backup_settings",
+      ];
+
+      const backup: Record<string, unknown[]> = {};
+
+      for (const table of tableNames) {
+        const { data, error } = await supabase.from(table).select("*");
+
+        if (error) {
+          throw new Error(`${table}: ${error.message}`);
+        }
+
+        backup[table] = data ?? [];
       }
 
-      const response = await fetch("/api/admin/backup", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ studio_id: studioId }),
+      const payload = {
+        application: "ZAZA DELL’ALI STUDIO LEGALE",
+        generated_at: new Date().toISOString(),
+        studio_id: studioId,
+        data: backup,
+      };
+
+      const content = JSON.stringify(payload, null, 2);
+      const blob = new Blob([content], {
+        type: "application/json;charset=utf-8",
       });
-      const result = (await response.json()) as BackupApiResponse;
 
-      if (
-        !response.ok ||
-        !result.success ||
-        !result.fileName ||
-        !result.content ||
-        !result.sha256Content ||
-        !result.manifestFileName ||
-        !result.manifestContent ||
-        !result.integrityReportFileName ||
-        !result.integrityReportContent
-      ) {
-        throw new Error(result.error || "Backup incompleto restituito dal server.");
-      }
+      const fileName = `zaza-dellali-backup-${formatFileDate(
+        new Date()
+      )}.json`;
 
-      downloadTextFile(
-        result.fileName,
-        result.content,
-        "application/json;charset=utf-8"
-      );
-      downloadTextFile(
-        `${result.fileName}.sha256`,
-        result.sha256Content,
-        "text/plain;charset=utf-8"
-      );
-      downloadTextFile(
-        result.manifestFileName,
-        result.manifestContent,
-        "application/json;charset=utf-8"
-      );
-      downloadTextFile(
-        result.integrityReportFileName,
-        result.integrityReportContent,
-        "text/markdown;charset=utf-8"
-      );
-
-      const backupSize = new Blob([result.content]).size;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
 
       const completedAt = new Date().toISOString();
 
-      const { error: runUpdateError } = await supabase
+      await supabase
         .from("backup_runs")
         .update({
           status: "completato",
           completed_at: completedAt,
-          drive_file_name: result.fileName,
-          size_bytes: backupSize,
+          drive_file_name: fileName,
+          size_bytes: blob.size,
         })
         .eq("id", run.id);
 
-      if (runUpdateError) {
-        throw new Error(`Storico backup: ${runUpdateError.message}`);
-      }
-
-      const { error: settingsUpdateError } = await supabase
+      await supabase
         .from("backup_settings")
         .update({
           last_successful_backup_at: completedAt,
@@ -254,12 +237,8 @@ export default function BackupPage({
         })
         .eq("studio_id", studioId);
 
-      if (settingsUpdateError) {
-        throw new Error(`Stato ultimo backup: ${settingsUpdateError.message}`);
-      }
-
       setMessage(
-        `Backup completo verificato e scaricato. SHA-256: ${result.sha256}.`
+        "Backup manuale creato e scaricato sul Mac. Il caricamento automatico su Google Drive sarà attivato dopo la pubblicazione online."
       );
       await loadBackupData();
     } catch (error) {
@@ -498,22 +477,6 @@ export default function BackupPage({
   );
 }
 
-function downloadTextFile(
-  fileName: string,
-  content: string,
-  type: string
-) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-}
-
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
     <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
@@ -606,4 +569,14 @@ function formatSize(value: number | null) {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
 
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatFileDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day}_${hours}-${minutes}`;
 }
