@@ -19,7 +19,9 @@ import ClientsPage, {
   type ClientCase,
   type ClientRecord,
 } from "./components/ClientsPage";
+import CounterpartiesPage from "./components/CounterpartiesPage";
 import CasesPage, {
+  getCounterpartyNames,
   type CaseRecord,
   type ClientOption,
   type CounterpartyOption,
@@ -60,6 +62,7 @@ const menuItems = [
   "Ricerca",
   "Calendario",
   "Clienti",
+  "Controparti",
   "Pratiche",
   "Udienze",
   "Scadenze",
@@ -102,6 +105,9 @@ export default function Home() {
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [selectedCase, setSelectedCase] = useState<CaseRecord | null>(null);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  const [selectedCounterpartyId, setSelectedCounterpartyId] = useState<
+    number | null
+  >(null);
   const [newCaseClientId, setNewCaseClientId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -127,17 +133,13 @@ export default function Home() {
           const contact = Array.isArray(caseRecord.contacts)
             ? caseRecord.contacts[0]
             : caseRecord.contacts;
-          const counterparty = Array.isArray(caseRecord.counterparties)
-            ? caseRecord.counterparties[0]
-            : caseRecord.counterparties;
-
           const claimant =
             contact?.last_name ||
             contact?.display_name ||
             caseRecord.claimant_name_raw ||
             "Parte";
           const defendant =
-            counterparty?.name ||
+            getCounterpartyNames(caseRecord).join(", ") ||
             caseRecord.defendant_name_raw ||
             "Controparte";
 
@@ -182,6 +184,7 @@ export default function Home() {
         setClients([]);
         setCases([]);
         setCounterparties([]);
+        setSelectedCounterpartyId(null);
         setEvents([]);
         setStudioId("");
       }
@@ -226,7 +229,8 @@ export default function Home() {
   async function loadCounterparties() {
     const { data, error } = await supabase
       .from("counterparties")
-      .select("id, name")
+      .select("id, name, display_name, deleted_at")
+      .is("deleted_at", null)
       .order("name", { ascending: true });
 
     if (error) throw error;
@@ -264,7 +268,21 @@ export default function Home() {
             phone
           ),
           counterparties (
-            name
+            id,
+            name,
+            display_name,
+            deleted_at
+          ),
+          case_counterparties (
+            id,
+            counterparty_id,
+            deleted_at,
+            counterparties (
+              id,
+              name,
+              display_name,
+              deleted_at
+            )
           )
         `
       )
@@ -435,6 +453,7 @@ export default function Home() {
     }
 
     setSelectedCase(foundCase);
+    setSelectedCounterpartyId(null);
     setActiveSection("Pratiche");
   }
 
@@ -457,6 +476,13 @@ export default function Home() {
     setSelectedClientId(null);
     setNewCaseClientId(clientId);
     setActiveSection("Pratiche");
+  }
+
+  function openCounterpartyById(counterpartyId: number) {
+    setSelectedCase(null);
+    setSelectedClientId(null);
+    setSelectedCounterpartyId(counterpartyId);
+    setActiveSection("Controparti");
   }
 
   if (!sessionChecked) {
@@ -501,6 +527,7 @@ export default function Home() {
                   setActiveSection(item);
                   setMobileMenuOpen(false);
                   setSelectedClientId(null);
+                  setSelectedCounterpartyId(null);
 
                   if (item !== "Pratiche") {
                     setSelectedCase(null);
@@ -579,6 +606,7 @@ export default function Home() {
             {activeSection === "Ricerca" && (
               <GlobalSearchPage
                 onOpenCase={openCaseById}
+                onOpenCounterparty={openCounterpartyById}
                 onOpenSection={setActiveSection}
               />
             )}
@@ -614,6 +642,17 @@ export default function Home() {
               />
             )}
 
+            {activeSection === "Controparti" && (
+              <CounterpartiesPage
+                key={selectedCounterpartyId ?? "counterparties"}
+                studioId={studioId}
+                initialCounterpartyId={selectedCounterpartyId}
+                onOpenCase={openCaseById}
+                onChanged={refreshAllData}
+                onDetailClose={() => setSelectedCounterpartyId(null)}
+              />
+            )}
+
             {activeSection === "Fatture" && (
               <BillingPage
                 studioId={studioId}
@@ -646,6 +685,7 @@ export default function Home() {
                     ) ?? null
                   }
                   onOpenClient={openClientById}
+                  onOpenCounterparty={openCounterpartyById}
                   events={
                     events.filter(
                       (event) => event.case_id === selectedCase.id
@@ -673,6 +713,7 @@ export default function Home() {
               "Ricerca",
               "Calendario",
               "Clienti",
+              "Controparti",
               "Pratiche",
               "Scadenze",
               "Fatture",
@@ -722,6 +763,8 @@ export default function Home() {
                   onClick={() => {
                     setActiveSection(item);
                     setMobileMenuOpen(false);
+                    setSelectedClientId(null);
+                    setSelectedCounterpartyId(null);
 
                     if (item !== "Pratiche") {
                       setSelectedCase(null);

@@ -9,13 +9,16 @@ type SearchResult = {
   title: string;
   subtitle: string;
   caseId?: number;
+  counterpartyId?: number;
 };
 
 export default function GlobalSearchPage({
   onOpenCase,
+  onOpenCounterparty,
   onOpenSection,
 }: {
   onOpenCase: (caseId: number) => void;
+  onOpenCounterparty: (counterpartyId: number) => void;
   onOpenSection: (section: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -66,6 +69,7 @@ export default function GlobalSearchPage({
         .or(
           `name.ilike.${pattern},fiscal_code.ilike.${pattern},vat_number.ilike.${pattern},lawyer_name.ilike.${pattern}`
         )
+        .is("deleted_at", null)
         .limit(20),
 
       supabase
@@ -144,6 +148,7 @@ export default function GlobalSearchPage({
       combined.push({
         id: `counterparty-${item.id}`,
         category: "Controparte",
+        counterpartyId: item.id,
         title: item.name || `Controparte n. ${item.id}`,
         subtitle:
           [
@@ -242,13 +247,13 @@ export default function GlobalSearchPage({
       return;
     }
 
-    if (result.category === "Cliente") {
-      onOpenSection("Clienti");
+    if (result.counterpartyId) {
+      onOpenCounterparty(result.counterpartyId);
       return;
     }
 
-    if (result.category === "Controparte") {
-      onOpenSection("Pratiche");
+    if (result.category === "Cliente") {
+      onOpenSection("Clienti");
       return;
     }
 
@@ -315,7 +320,11 @@ export default function GlobalSearchPage({
               </div>
 
               <span className="rounded-xl border border-neutral-300 px-3 py-2 text-xs">
-                {result.caseId ? "Apri pratica" : "Apri sezione"}
+                {result.caseId
+                  ? "Apri pratica"
+                  : result.counterpartyId
+                    ? "Apri controparte"
+                    : "Apri sezione"}
               </span>
             </div>
           </button>

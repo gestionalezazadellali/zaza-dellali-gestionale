@@ -168,6 +168,7 @@ export default function BackupPage({
         "user_permissions",
         "contacts",
         "counterparties",
+        "case_counterparties",
         "cases",
         "events",
         "hearing_updates",

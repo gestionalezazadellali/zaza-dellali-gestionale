@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import TrashClientsPage from "./TrashClientsPage";
+import TrashCounterpartiesPage from "./TrashCounterpartiesPage";
 import TrashEventsPage from "./TrashEventsPage";
 import TrashUsersPage from "./TrashUsersPage";
 
@@ -168,6 +169,11 @@ export default function TrashCasesPage({
       )}
 
       <TrashClientsPage
+        studioId={studioId}
+        onRefresh={onRefresh}
+      />
+
+      <TrashCounterpartiesPage
         studioId={studioId}
         onRefresh={onRefresh}
       />

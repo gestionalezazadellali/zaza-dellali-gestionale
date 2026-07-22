@@ -8,7 +8,10 @@ import {
   useState,
 } from "react";
 import { supabase } from "../../lib/supabase";
-import type { CaseRecord } from "./CasesPage";
+import {
+  getCaseCounterparties,
+  type CaseRecord,
+} from "./CasesPage";
 import CaseTitlesModule, {
   type CaseTitleRecord,
   type EnforcementActionRecord,
@@ -90,6 +93,7 @@ export default function CaseDetail({
   caseRecord,
   client,
   onOpenClient,
+  onOpenCounterparty,
   events,
   onBack,
   onRefresh,
@@ -98,6 +102,7 @@ export default function CaseDetail({
   caseRecord: CaseRecord;
   client: CaseClientRecord | null;
   onOpenClient: (clientId: number) => void;
+  onOpenCounterparty: (counterpartyId: number) => void;
   events: CalendarEvent[];
   onBack: () => void;
   onRefresh: () => Promise<void>;
@@ -413,18 +418,15 @@ export default function CaseDetail({
     ? caseRecord.contacts[0]
     : caseRecord.contacts;
 
-  const relatedCounterparty = Array.isArray(caseRecord.counterparties)
-    ? caseRecord.counterparties[0]
-    : caseRecord.counterparties;
-
   const clientName =
     client?.display_name ||
     relatedContact?.display_name ||
     caseRecord.claimant_name_raw ||
     "Cliente non indicato";
 
+  const relatedCounterparties = getCaseCounterparties(caseRecord);
   const counterpartyName =
-    relatedCounterparty?.name ||
+    relatedCounterparties.map((item) => item.name).join(", ") ||
     caseRecord.defendant_name_raw ||
     "Controparte non indicata";
 
@@ -486,9 +488,37 @@ export default function CaseDetail({
 
           <div className="rounded-xl border border-neutral-200 p-4">
             <p className="text-xs uppercase tracking-wide text-neutral-500">
-              Controparte
+              Controparti
             </p>
-            <p className="mt-2 font-semibold">{counterpartyName}</p>
+            <div className="mt-2 space-y-2">
+              {relatedCounterparties.length === 0 ? (
+                <p className="font-semibold">{counterpartyName}</p>
+              ) : (
+                relatedCounterparties.map((counterparty, index) => (
+                  <div
+                    key={counterparty.id ?? `${counterparty.name}-${index}`}
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    {counterparty.id ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenCounterparty(counterparty.id!)}
+                        className="text-left font-semibold text-neutral-900 underline decoration-neutral-300 underline-offset-4 hover:decoration-neutral-900"
+                      >
+                        {counterparty.name}
+                      </button>
+                    ) : (
+                      <p className="font-semibold">{counterparty.name}</p>
+                    )}
+                    {counterparty.deleted_at && (
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800">
+                        Eliminata · collegamento storico
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </div>
 

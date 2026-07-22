@@ -2,7 +2,10 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
-import type { CaseRecord } from "./CasesPage";
+import {
+  getCounterpartyNames,
+  type CaseRecord,
+} from "./CasesPage";
 
 export type DeadlineEvent = {
   id: number;
@@ -439,17 +442,15 @@ function getCaseLabel(item: CaseRecord) {
   const contact = Array.isArray(item.contacts)
     ? item.contacts[0]
     : item.contacts;
-  const counterparty = Array.isArray(item.counterparties)
-    ? item.counterparties[0]
-    : item.counterparties;
-
   const claimant =
     contact?.last_name ||
     contact?.display_name ||
     item.claimant_name_raw ||
     `Pratica n. ${item.id}`;
   const defendant =
-    counterparty?.name || item.defendant_name_raw || "controparte non indicata";
+    getCounterpartyNames(item).join(", ") ||
+    item.defendant_name_raw ||
+    "controparte non indicata";
 
   return `${claimant} c. ${defendant}`;
 }

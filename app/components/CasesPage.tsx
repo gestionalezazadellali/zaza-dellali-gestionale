@@ -2,6 +2,16 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import {
+  createCounterparty,
+  saveCaseWithCounterparties,
+  type CounterpartyInput,
+  type CounterpartyRecord,
+} from "../../lib/counterparties";
+import AnagraphicFormFields, {
+  emptyAnagraphicForm,
+  type AnagraphicFormValues,
+} from "./AnagraphicFormFields";
 
 export type ClientOption = {
   id: number;
@@ -11,6 +21,28 @@ export type ClientOption = {
 export type CounterpartyOption = {
   id: number;
   name: string;
+  display_name?: string | null;
+  deleted_at?: string | null;
+};
+
+export type CaseCounterpartyLink = {
+  id: number;
+  counterparty_id: number;
+  deleted_at: string | null;
+  counterparties:
+    | {
+        id: number;
+        name: string;
+        display_name: string | null;
+        deleted_at: string | null;
+      }
+    | {
+        id: number;
+        name: string;
+        display_name: string | null;
+        deleted_at: string | null;
+      }[]
+    | null;
 };
 
 export type CaseRecord = {
@@ -49,18 +81,24 @@ export type CaseRecord = {
     | null;
   counterparties:
     | {
+        id: number;
         name: string;
+        display_name: string | null;
+        deleted_at: string | null;
       }
     | {
+        id: number;
         name: string;
+        display_name: string | null;
+        deleted_at: string | null;
       }[]
     | null;
+  case_counterparties: CaseCounterpartyLink[] | null;
 };
 
 type CaseForm = {
   client_contact_id: string;
-  counterparty_id: string;
-  new_counterparty_name: string;
+  counterparty_ids: number[];
   title: string;
   case_type: string;
   court_type: string;
@@ -76,8 +114,7 @@ type CaseForm = {
 
 const emptyForm: CaseForm = {
   client_contact_id: "",
-  counterparty_id: "",
-  new_counterparty_name: "",
+  counterparty_ids: [],
   title: "",
   case_type: "causa_lavoro",
   court_type: "Tribunale Ordinario",
@@ -146,12 +183,26 @@ export default function CasesPage({
   const [saving, setSaving] = useState(false);
   const [deletingCaseId, setDeletingCaseId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [additionalCounterparties, setAdditionalCounterparties] = useState<
+    CounterpartyOption[]
+  >([]);
+  const [counterpartySearch, setCounterpartySearch] = useState("");
+  const [showCounterpartyForm, setShowCounterpartyForm] = useState(false);
+  const [counterpartyForm, setCounterpartyForm] =
+    useState<AnagraphicFormValues>(emptyAnagraphicForm);
+  const [savingCounterparty, setSavingCounterparty] = useState(false);
+  const [counterpartyMessage, setCounterpartyMessage] = useState("");
 
   useEffect(() => {
     if (initialClientId !== null) {
       onInitialClientHandled?.();
     }
   }, [initialClientId, onInitialClientHandled]);
+
+  const availableCounterparties = useMemo(
+    () => mergeCounterpartyOptions(counterparties, additionalCounterparties),
+    [additionalCounterparties, counterparties]
+  );
 
   const filteredCases = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("it");
@@ -163,7 +214,7 @@ export default function CasesPage({
       const contact = Array.isArray(item.contacts)
         ? item.contacts[0]
         : item.contacts;
-      const counterparty = getCounterpartyName(item);
+      const counterparty = getCounterpartyNames(item).join(" ");
 
       return [
         client,
@@ -191,20 +242,39 @@ export default function CasesPage({
   function openNewForm() {
     setEditingCase(null);
     setForm(emptyForm);
+    setCounterpartySearch("");
     setMessage("");
     setShowForm(true);
   }
 
   function openEditForm(item: CaseRecord) {
+    const linkedCounterparties = getCaseCounterparties(item);
+
     setEditingCase(item);
+    setAdditionalCounterparties((current) =>
+      mergeCounterpartyOptions(
+        current,
+        linkedCounterparties.flatMap((counterparty) =>
+          counterparty.id === null
+            ? []
+            : [
+                {
+                  id: counterparty.id,
+                  name: counterparty.name,
+                  display_name: counterparty.name,
+                  deleted_at: counterparty.deleted_at,
+                },
+              ]
+        )
+      )
+    );
     setForm({
       client_contact_id: item.client_contact_id
         ? String(item.client_contact_id)
         : "",
-      counterparty_id: item.counterparty_id
-        ? String(item.counterparty_id)
-        : "",
-      new_counterparty_name: "",
+      counterparty_ids: linkedCounterparties.flatMap((counterparty) =>
+        counterparty.id === null ? [] : [counterparty.id]
+      ),
       title: item.title ?? "",
       case_type: item.case_type ?? "causa_lavoro",
       court_type: item.court_type ?? "Tribunale Ordinario",
@@ -217,51 +287,9 @@ export default function CasesPage({
       description: item.description ?? "",
       notes: item.notes ?? "",
     });
+    setCounterpartySearch("");
     setMessage("");
     setShowForm(true);
-  }
-
-  async function getOrCreateCounterpartyId() {
-    if (form.counterparty_id) {
-      return Number(form.counterparty_id);
-    }
-
-    const name = form.new_counterparty_name.trim();
-    if (!name) return null;
-
-    const normalizedName = name
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLocaleLowerCase("it")
-      .replace(/[^a-z0-9]+/g, " ")
-      .trim();
-
-    const existing = counterparties.find(
-      (item) =>
-        item.name
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLocaleLowerCase("it")
-          .replace(/[^a-z0-9]+/g, " ")
-          .trim() === normalizedName
-    );
-
-    if (existing) return existing.id;
-
-    const { data, error } = await supabase
-      .from("counterparties")
-      .insert({
-        studio_id: studioId,
-        name,
-        normalized_name: normalizedName,
-        counterparty_type: "da_classificare",
-        active: true,
-      })
-      .select("id")
-      .single();
-
-    if (error) throw error;
-    return data.id as number;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -276,32 +304,26 @@ export default function CasesPage({
     setMessage("");
 
     try {
-      const counterpartyId = await getOrCreateCounterpartyId();
-
       const client = clients.find(
         (item) => item.id === Number(form.client_contact_id)
       );
-      const counterparty = counterparties.find(
-        (item) => item.id === counterpartyId
-      );
+      const selectedCounterpartyNames = form.counterparty_ids
+        .map(
+          (id) =>
+            availableCounterparties.find((item) => item.id === id)?.display_name ||
+            availableCounterparties.find((item) => item.id === id)?.name
+        )
+        .filter((name): name is string => Boolean(name));
+      const generatedCounterpartyName =
+        selectedCounterpartyNames.join(", ") || "controparte";
 
       const payload = {
-        studio_id: studioId,
         client_contact_id: Number(form.client_contact_id),
-        counterparty_id: counterpartyId,
         title:
           form.title.trim() ||
-          `${client?.display_name ?? "Cliente"} c/ ${
-            counterparty?.name ||
-            form.new_counterparty_name.trim() ||
-            "controparte"
-          }`,
+          `${client?.display_name ?? "Cliente"} c/ ${generatedCounterpartyName}`,
         case_type: form.case_type,
         claimant_name_raw: client?.display_name ?? null,
-        defendant_name_raw:
-          counterparty?.name ||
-          form.new_counterparty_name.trim() ||
-          null,
         court_type: form.court_type.trim() || null,
         court_city: form.court_city.trim() || null,
         section: form.section.trim() || null,
@@ -313,16 +335,21 @@ export default function CasesPage({
         notes: form.notes.trim() || null,
         needs_review: false,
         active: true,
+        ...(editingCase
+          ? {}
+          : {
+              counterparty_id: form.counterparty_ids[0] ?? null,
+              defendant_name_raw:
+                selectedCounterpartyNames.join(", ") || null,
+            }),
       };
 
-      const result = editingCase
-        ? await supabase
-            .from("cases")
-            .update(payload)
-            .eq("id", editingCase.id)
-        : await supabase.from("cases").insert(payload);
-
-      if (result.error) throw result.error;
+      await saveCaseWithCounterparties({
+        studioId,
+        caseId: editingCase?.id,
+        caseData: payload,
+        counterpartyIds: form.counterparty_ids,
+      });
 
       await onRefresh();
 
@@ -342,6 +369,52 @@ export default function CasesPage({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  function toggleCounterparty(counterpartyId: number) {
+    setForm((current) => ({
+      ...current,
+      counterparty_ids: current.counterparty_ids.includes(counterpartyId)
+        ? current.counterparty_ids.filter((id) => id !== counterpartyId)
+        : [...current.counterparty_ids, counterpartyId],
+    }));
+  }
+
+  async function handleCreateCounterparty(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+    setSavingCounterparty(true);
+    setCounterpartyMessage("");
+
+    try {
+      const created = await createCounterparty(
+        studioId,
+        counterpartyForm as CounterpartyInput
+      );
+      const option = counterpartyRecordToOption(created);
+
+      setAdditionalCounterparties((current) =>
+        mergeCounterpartyOptions(current, [option])
+      );
+      setForm((current) => ({
+        ...current,
+        counterparty_ids: [...new Set([...current.counterparty_ids, created.id])],
+      }));
+      setCounterpartyForm(emptyAnagraphicForm);
+      setShowCounterpartyForm(false);
+      setCounterpartySearch("");
+      setMessage("Nuova controparte creata e selezionata.");
+      await onRefresh();
+    } catch (error) {
+      setCounterpartyMessage(
+        error instanceof Error
+          ? `Errore: ${error.message}`
+          : "Errore durante il salvataggio della controparte."
+      );
+    } finally {
+      setSavingCounterparty(false);
     }
   }
 
@@ -446,7 +519,8 @@ export default function CasesPage({
                   {getClientName(item) || `Pratica n. ${item.id}`}
                 </h3>
                 <p className="mt-1 text-sm text-neutral-500">
-                  Controparte: {getCounterpartyName(item) || "Non indicata"}
+                  Controparti:{" "}
+                  {getCounterpartyNames(item).join(", ") || "Non indicate"}
                 </p>
                 <p className="mt-3 text-sm">
                   {item.court_type || "Ufficio non indicato"}
@@ -490,17 +564,45 @@ export default function CasesPage({
         <CaseFormModal
           form={form}
           clients={clients}
-          counterparties={counterparties}
+          counterparties={availableCounterparties}
+          counterpartySearch={counterpartySearch}
           editing={Boolean(editingCase)}
           saving={saving}
           message={message}
           onChange={updateForm}
+          onCounterpartySearchChange={setCounterpartySearch}
+          onToggleCounterparty={toggleCounterparty}
+          onCreateCounterparty={() => {
+            setCounterpartyForm(emptyAnagraphicForm);
+            setCounterpartyMessage("");
+            setShowCounterpartyForm(true);
+          }}
           onSubmit={handleSubmit}
           onClose={() => {
             setShowForm(false);
             setEditingCase(null);
             setForm(emptyForm);
             setMessage("");
+          }}
+        />
+      )}
+
+      {showCounterpartyForm && (
+        <InlineCounterpartyFormModal
+          form={counterpartyForm}
+          saving={savingCounterparty}
+          message={counterpartyMessage}
+          onChange={(field, value) =>
+            setCounterpartyForm((current) => ({
+              ...current,
+              [field]: value,
+            }))
+          }
+          onSubmit={handleCreateCounterparty}
+          onClose={() => {
+            setShowCounterpartyForm(false);
+            setCounterpartyForm(emptyAnagraphicForm);
+            setCounterpartyMessage("");
           }}
         />
       )}
@@ -512,20 +614,28 @@ function CaseFormModal({
   form,
   clients,
   counterparties,
+  counterpartySearch,
   editing,
   saving,
   message,
   onChange,
+  onCounterpartySearchChange,
+  onToggleCounterparty,
+  onCreateCounterparty,
   onSubmit,
   onClose,
 }: {
   form: CaseForm;
   clients: ClientOption[];
   counterparties: CounterpartyOption[];
+  counterpartySearch: string;
   editing: boolean;
   saving: boolean;
   message: string;
   onChange: (field: keyof CaseForm, value: string) => void;
+  onCounterpartySearchChange: (value: string) => void;
+  onToggleCounterparty: (counterpartyId: number) => void;
+  onCreateCounterparty: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
 }) {
@@ -564,21 +674,13 @@ function CaseFormModal({
             ]}
           />
 
-          <SelectField
-            label="Controparte già presente"
-            value={form.counterparty_id}
-            onChange={(value) => onChange("counterparty_id", value)}
-            options={[
-              ["", "Seleziona controparte"],
-              ...counterparties.map((item) => [String(item.id), item.name]),
-            ]}
-          />
-
-          <InputField
-            label="Nuova controparte"
-            value={form.new_counterparty_name}
-            onChange={(value) => onChange("new_counterparty_name", value)}
-            placeholder="Compila solo se non è già presente"
+          <CounterpartySelector
+            counterparties={counterparties}
+            selectedIds={form.counterparty_ids}
+            search={counterpartySearch}
+            onSearchChange={onCounterpartySearchChange}
+            onToggle={onToggleCounterparty}
+            onCreate={onCreateCounterparty}
           />
 
           <InputField
@@ -694,6 +796,187 @@ function CaseFormModal({
   );
 }
 
+function CounterpartySelector({
+  counterparties,
+  selectedIds,
+  search,
+  onSearchChange,
+  onToggle,
+  onCreate,
+}: {
+  counterparties: CounterpartyOption[];
+  selectedIds: number[];
+  search: string;
+  onSearchChange: (value: string) => void;
+  onToggle: (counterpartyId: number) => void;
+  onCreate: () => void;
+}) {
+  const query = search.trim().toLocaleLowerCase("it");
+  const selected = selectedIds.flatMap((id) => {
+    const item = counterparties.find((counterparty) => counterparty.id === id);
+    return item ? [item] : [];
+  });
+  const results = counterparties
+    .filter((item) => !item.deleted_at && !selectedIds.includes(item.id))
+    .filter((item) =>
+      (item.display_name || item.name)
+        .toLocaleLowerCase("it")
+        .includes(query)
+    )
+    .slice(0, 8);
+
+  return (
+    <section className="space-y-4 rounded-xl border border-neutral-200 p-4 sm:col-span-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <label className="block flex-1">
+          <span className="mb-2 block text-sm text-neutral-500">
+            Cerca controparti esistenti
+          </span>
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Cerca per nominativo"
+            className="w-full rounded-xl border border-neutral-300 px-4 py-3 outline-none focus:border-neutral-600"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={onCreate}
+          className="rounded-xl border border-neutral-900 px-4 py-3 text-sm font-medium"
+        >
+          Crea nuova controparte
+        </button>
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wide text-neutral-500">
+          Controparti selezionate
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {selected.length === 0 ? (
+            <p className="text-sm text-neutral-500">
+              Nessuna controparte selezionata.
+            </p>
+          ) : (
+            selected.map((item) => (
+              <span
+                key={item.id}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm ${
+                  item.deleted_at
+                    ? "bg-amber-100 text-amber-900"
+                    : "bg-neutral-900 text-white"
+                }`}
+              >
+                {item.display_name || item.name}
+                {item.deleted_at && (
+                  <span className="text-xs">Eliminata · storico</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onToggle(item.id)}
+                  className="rounded-full px-1 hover:bg-black/10"
+                  aria-label={`Scollega ${item.display_name || item.name}`}
+                  title="Scollega dalla pratica senza eliminare l’anagrafica"
+                >
+                  ×
+                </button>
+              </span>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wide text-neutral-500">
+          Risultati
+        </p>
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {results.length === 0 ? (
+            <p className="text-sm text-neutral-500 sm:col-span-2">
+              Nessun’altra controparte disponibile.
+            </p>
+          ) : (
+            results.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onToggle(item.id)}
+                className="rounded-xl border border-neutral-200 px-3 py-3 text-left text-sm transition hover:border-neutral-500 hover:bg-neutral-50"
+              >
+                <span className="font-medium">
+                  {item.display_name || item.name}
+                </span>
+                <span className="ml-2 text-neutral-500">Seleziona</span>
+              </button>
+            ))
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InlineCounterpartyFormModal({
+  form,
+  saving,
+  message,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  form: AnagraphicFormValues;
+  saving: boolean;
+  message: string;
+  onChange: (field: keyof AnagraphicFormValues, value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-black/60 px-4 py-10">
+      <form
+        onSubmit={onSubmit}
+        className="mx-auto w-full max-w-4xl rounded-2xl bg-white p-6 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-neutral-500">Dalla pratica</p>
+            <h3 className="mt-1 text-xl font-semibold">Nuova controparte</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+          >
+            Chiudi
+          </button>
+        </div>
+
+        <AnagraphicFormFields values={form} onChange={onChange} />
+
+        {message && <p className="mt-5 text-sm text-red-700">{message}</p>}
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-300 px-5 py-3 text-sm"
+          >
+            Annulla
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-xl bg-neutral-900 px-5 py-3 text-sm text-white disabled:opacity-50"
+          >
+            {saving ? "Salvataggio..." : "Salva e seleziona"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function InputField({
   label,
   value,
@@ -758,10 +1041,81 @@ function getClientName(item: CaseRecord) {
     : item.contacts.display_name;
 }
 
-function getCounterpartyName(item: CaseRecord) {
-  if (!item.counterparties) return item.defendant_name_raw ?? "";
+export type CaseCounterpartyDisplay = {
+  id: number | null;
+  name: string;
+  deleted_at: string | null;
+};
 
-  return Array.isArray(item.counterparties)
-    ? item.counterparties[0]?.name ?? item.defendant_name_raw ?? ""
-    : item.counterparties.name;
+export function getCaseCounterparties(
+  item: CaseRecord
+): CaseCounterpartyDisplay[] {
+  const relationHistory = item.case_counterparties ?? [];
+  const activeRelations = relationHistory.filter((link) => !link.deleted_at);
+  const related = activeRelations.flatMap((link) => {
+    const counterparty = Array.isArray(link.counterparties)
+      ? link.counterparties[0]
+      : link.counterparties;
+
+    if (!counterparty) return [];
+
+    return [
+      {
+        id: counterparty.id,
+        name: counterparty.display_name || counterparty.name,
+        deleted_at: counterparty.deleted_at,
+      },
+    ];
+  });
+
+  if (related.length > 0) return related;
+
+  // A relation history with no active rows means the user explicitly unlinked
+  // every counterparty: the legacy snapshot must not make it reappear.
+  if (relationHistory.length > 0 && activeRelations.length === 0) return [];
+
+  const legacyCounterparty = Array.isArray(item.counterparties)
+    ? item.counterparties[0]
+    : item.counterparties;
+
+  if (legacyCounterparty) {
+    return [
+      {
+        id: item.counterparty_id,
+        name: legacyCounterparty.display_name || legacyCounterparty.name,
+        deleted_at: legacyCounterparty.deleted_at,
+      },
+    ];
+  }
+
+  return item.defendant_name_raw
+    ? [{ id: null, name: item.defendant_name_raw, deleted_at: null }]
+    : [];
+}
+
+export function getCounterpartyNames(item: CaseRecord) {
+  return getCaseCounterparties(item).map((counterparty) => counterparty.name);
+}
+
+function mergeCounterpartyOptions(...groups: CounterpartyOption[][]) {
+  const merged = new Map<number, CounterpartyOption>();
+
+  for (const group of groups) {
+    for (const item of group) merged.set(item.id, item);
+  }
+
+  return [...merged.values()].sort((a, b) =>
+    (a.display_name || a.name).localeCompare(b.display_name || b.name, "it")
+  );
+}
+
+function counterpartyRecordToOption(
+  item: CounterpartyRecord
+): CounterpartyOption {
+  return {
+    id: item.id,
+    name: item.name,
+    display_name: item.display_name,
+    deleted_at: item.deleted_at,
+  };
 }
