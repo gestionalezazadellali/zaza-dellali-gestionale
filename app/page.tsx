@@ -5,6 +5,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import FullCalendar from "@fullcalendar/react";
@@ -57,6 +58,8 @@ type CalendarEvent = {
   status: string | null;
   case_id: number | null;
 };
+
+type SyncStatus = "connecting" | "synced" | "syncing" | "offline" | "error";
 
 const menuItems = [
   "Dashboard",
@@ -112,6 +115,9 @@ export default function Home() {
   const [newCaseClientId, setNewCaseClientId] = useState<number | null>(null);
   const [editCaseId, setEditCaseId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const refreshInProgress = useRef(false);
 
   const hearingEvents = useMemo(
     () =>
@@ -366,6 +372,9 @@ export default function Home() {
   }
 
   async function refreshAllData() {
+    if (refreshInProgress.current) return;
+    refreshInProgress.current = true;
+    setSyncStatus(navigator.onLine ? "syncing" : "offline");
     setErrorMessage("");
 
     try {
@@ -376,16 +385,105 @@ export default function Home() {
         loadCounts(),
         loadEvents(),
       ]);
+      setLastSyncedAt(new Date());
+      setSyncStatus(navigator.onLine ? "synced" : "offline");
     } catch (error) {
+      setSyncStatus(navigator.onLine ? "error" : "offline");
       setErrorMessage(
         error instanceof Error
           ? error.message
           : "Errore durante l’aggiornamento dei dati."
       );
+    } finally {
+      refreshInProgress.current = false;
     }
   }
 
   const refreshAllDataEffect = useEffectEvent(refreshAllData);
+
+  useEffect(() => {
+    if (!isLoggedIn || !studioId) return;
+
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        void refreshAllDataEffect();
+      }, 350);
+    };
+
+    const realtimeTables = [
+      "contacts",
+      "counterparties",
+      "cases",
+      "case_counterparties",
+      "events",
+      "case_activities",
+      "case_titles",
+      "hearing_updates",
+      "invoices",
+      "payments",
+      "enforcement_actions",
+      "audit_log",
+      "profiles",
+    ];
+
+    const channel = supabase.channel(`studio-realtime-${studioId}`);
+    for (const table of realtimeTables) {
+      channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table,
+          filter: `studio_id=eq.${studioId}`,
+        },
+        scheduleRefresh
+      );
+    }
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        setSyncStatus(navigator.onLine ? "synced" : "offline");
+      } else if (
+        status === "CHANNEL_ERROR" ||
+        status === "TIMED_OUT"
+      ) {
+        setSyncStatus(navigator.onLine ? "error" : "offline");
+      }
+    });
+
+    const handleFocus = () => scheduleRefresh();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") scheduleRefresh();
+    };
+    const handleOnline = () => {
+      setSyncStatus("connecting");
+      scheduleRefresh();
+    };
+    const handleOffline = () => setSyncStatus("offline");
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    const fallbackInterval = window.setInterval(() => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        scheduleRefresh();
+      }
+    }, 60_000);
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      window.clearInterval(fallbackInterval);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      void supabase.removeChannel(channel);
+    };
+  }, [isLoggedIn, studioId]);
 
   useEffect(() => {
     if (!isLoggedIn) return;
@@ -603,13 +701,19 @@ export default function Home() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-xl border border-neutral-300 px-3 py-2 text-sm lg:hidden"
-            >
-              Esci
-            </button>
+            <div className="flex items-center gap-3">
+              <SyncStatusBadge
+                status={syncStatus}
+                lastSyncedAt={lastSyncedAt}
+              />
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-xl border border-neutral-300 px-3 py-2 text-sm lg:hidden"
+              >
+                Esci
+              </button>
+            </div>
           </header>
 
           <div className="p-3 sm:p-5">
@@ -933,6 +1037,52 @@ function MenuIcon({ item }: { item: string }) {
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z" />
     </svg>
+  );
+}
+
+function SyncStatusBadge({
+  status,
+  lastSyncedAt,
+}: {
+  status: SyncStatus;
+  lastSyncedAt: Date | null;
+}) {
+  const labels: Record<SyncStatus, string> = {
+    connecting: "Collegamento...",
+    synced: lastSyncedAt
+      ? `Aggiornato ${lastSyncedAt.toLocaleTimeString("it-IT", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`
+      : "Dati sincronizzati",
+    syncing: "Sincronizzazione...",
+    offline: "Offline",
+    error: "Riallineamento in attesa",
+  };
+  const colors: Record<SyncStatus, string> = {
+    connecting: "bg-amber-100 text-amber-800",
+    synced: "bg-emerald-100 text-emerald-800",
+    syncing: "bg-blue-100 text-blue-800",
+    offline: "bg-neutral-200 text-neutral-700",
+    error: "bg-amber-100 text-amber-800",
+  };
+
+  return (
+    <span
+      className={`hidden items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium sm:flex ${colors[status]}`}
+      title="Stato della sincronizzazione tra i dispositivi"
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${
+          status === "synced"
+            ? "bg-emerald-500"
+            : status === "syncing" || status === "connecting"
+              ? "animate-pulse bg-current"
+              : "bg-current"
+        }`}
+      />
+      {labels[status]}
+    </span>
   );
 }
 
