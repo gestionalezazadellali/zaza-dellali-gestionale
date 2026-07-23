@@ -18,11 +18,13 @@ export default function GlobalSearchPage({
   onOpenClient,
   onOpenCounterparty,
   onOpenSection,
+  compact = false,
 }: {
   onOpenCase: (caseId: number) => void;
   onOpenClient: (clientId: number) => void;
   onOpenCounterparty: (counterpartyId: number) => void;
   onOpenSection: (section: string) => void;
+  compact?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -272,18 +274,22 @@ export default function GlobalSearchPage({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <div>
+    <div className={compact ? "space-y-3" : "space-y-6"}>
+      <section
+        className={`rounded-2xl border border-neutral-200 bg-white shadow-sm ${
+          compact ? "p-4" : "p-6"
+        }`}
+      >
+        {!compact && <div>
           <p className="text-sm text-neutral-500">
             Ricerca trasversale nel gestionale
           </p>
           <h3 className="mt-1 text-xl font-semibold">Ricerca globale</h3>
-        </div>
+        </div>}
 
         <form
           onSubmit={handleSearch}
-          className="mt-6 flex flex-col gap-3 sm:flex-row"
+          className={`${compact ? "" : "mt-6"} flex flex-col gap-3 sm:flex-row`}
         >
           <input
             type="search"
@@ -302,16 +308,20 @@ export default function GlobalSearchPage({
           </button>
         </form>
 
-        <p className="mt-4 text-sm text-neutral-500">{message}</p>
+        <p className={`${compact ? "mt-2" : "mt-4"} text-xs text-neutral-500`}>
+          {message}
+        </p>
       </section>
 
-      <section className="grid gap-4">
+      <section className={`grid ${compact ? "gap-2" : "gap-4"}`}>
         {results.map((result) => (
           <button
             key={result.id}
             type="button"
             onClick={() => openResult(result)}
-            className="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-sm transition hover:border-neutral-400 hover:bg-neutral-50"
+            className={`rounded-2xl border border-neutral-200 bg-white text-left shadow-sm transition hover:border-neutral-400 hover:bg-neutral-50 ${
+              compact ? "p-3" : "p-5"
+            }`}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>

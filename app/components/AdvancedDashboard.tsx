@@ -144,27 +144,28 @@ export default function AdvancedDashboard({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <GlobalSearchPage
         onOpenCase={onOpenCase}
         onOpenClient={onOpenClient}
         onOpenCounterparty={onOpenCounterparty}
         onOpenSection={onOpenSection}
+        compact
       />
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <Panel title={`Prossime udienze (${upcomingHearings.length})`}>
-          <EventList
-            events={upcomingHearings}
-            emptyText="Nessuna udienza futura."
-            onOpenCase={onOpenCase}
-          />
-        </Panel>
-
+      <section className="grid gap-4 xl:grid-cols-2">
         <Panel title={`Prossime scadenze (${upcomingDeadlines.length})`}>
           <EventList
             events={upcomingDeadlines}
             emptyText="Nessuna scadenza futura."
+            onOpenCase={onOpenCase}
+          />
+        </Panel>
+
+        <Panel title={`Prossime udienze (${upcomingHearings.length})`}>
+          <EventList
+            events={upcomingHearings}
+            emptyText="Nessuna udienza futura."
             onOpenCase={onOpenCase}
           />
         </Panel>
@@ -177,14 +178,14 @@ export default function AdvancedDashboard({
             Nessun aggiornamento registrato.
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="grid gap-2 lg:grid-cols-2">
             {updates.map((item) => (
               <button
                 key={item.id}
                 type="button"
                 disabled={!item.caseId}
                 onClick={() => item.caseId && onOpenCase(item.caseId)}
-                className="w-full rounded-xl border border-neutral-200 p-4 text-left disabled:cursor-default"
+                className="w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-left transition hover:bg-neutral-50 disabled:cursor-default"
               >
                 <div className="flex flex-col justify-between gap-1 sm:flex-row">
                   <span className="font-medium">{item.title}</span>
@@ -210,9 +211,9 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <h3 className="text-lg font-semibold">{title}</h3>
-      <div className="mt-5">{children}</div>
+    <article className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+      <h3 className="font-semibold">{title}</h3>
+      <div className="mt-3">{children}</div>
     </article>
   );
 }
@@ -231,28 +232,54 @@ function EventList({
   }
 
   return (
-    <div className="max-h-[32rem] space-y-3 overflow-y-auto pr-1">
+    <div className="max-h-[25rem] divide-y divide-neutral-100 overflow-y-auto pr-1">
       {events.map((event) => (
         <button
           key={event.id}
           type="button"
           disabled={!event.case_id}
           onClick={() => event.case_id && onOpenCase(event.case_id)}
-          className="w-full rounded-xl border border-neutral-200 p-4 text-left disabled:cursor-default"
+          className="grid w-full grid-cols-[3.2rem_1fr_auto] items-center gap-3 px-1 py-3 text-left transition hover:bg-neutral-50 disabled:cursor-default"
         >
-          <p className="font-medium">{event.title}</p>
-          <p className="mt-1 text-sm text-neutral-500">
-            {formatDateTime(event.start_at)}
-          </p>
-          {event.description && (
-            <p className="mt-1 text-sm text-neutral-600">
-              {event.description}
-            </p>
-          )}
+          <DateBlock value={event.start_at} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{event.title}</p>
+            {event.description && (
+              <p className="mt-0.5 truncate text-xs text-neutral-500">
+                {event.description}
+              </p>
+            )}
+          </div>
+          <span className="text-xs font-medium text-neutral-600">
+            {formatTime(event.start_at)}
+          </span>
         </button>
       ))}
     </div>
   );
+}
+
+function DateBlock({ value }: { value: string }) {
+  const date = new Date(value);
+  return (
+    <span className="text-center">
+      <span className="block text-lg font-semibold leading-none">
+        {new Intl.DateTimeFormat("it-IT", { day: "2-digit" }).format(date)}
+      </span>
+      <span className="mt-1 block text-[10px] font-medium uppercase text-neutral-500">
+        {new Intl.DateTimeFormat("it-IT", { month: "short" })
+          .format(date)
+          .replace(".", "")}
+      </span>
+    </span>
+  );
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat("it-IT", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function auditTitle(action: string | null, entityType: string | null) {

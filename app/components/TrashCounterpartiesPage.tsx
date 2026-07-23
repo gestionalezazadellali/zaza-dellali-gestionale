@@ -7,6 +7,7 @@ import {
   type CounterpartyRecord,
 } from "../../lib/counterparties";
 import PermanentDeleteButton from "./PermanentDeleteButton";
+import { permanentlyDeleteTrashItem } from "../../lib/permanent-delete";
 
 export default function TrashCounterpartiesPage({
   studioId,
@@ -18,6 +19,8 @@ export default function TrashCounterpartiesPage({
   const [counterparties, setCounterparties] = useState<CounterpartyRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoringId, setRestoringId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkWorking, setBulkWorking] = useState(false);
   const [message, setMessage] = useState("");
 
   const loadTrash = useCallback(async () => {
@@ -27,6 +30,9 @@ export default function TrashCounterpartiesPage({
       limit: 100,
     });
     setCounterparties(data);
+    setSelectedIds((current) =>
+      current.filter((id) => data.some((item) => item.id === id))
+    );
   }, [studioId]);
 
   useEffect(() => {
@@ -75,6 +81,47 @@ export default function TrashCounterpartiesPage({
     }
   }
 
+  function toggleSelection(id: number) {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.length === 0) return;
+    const confirmed = window.confirm(
+      `Eliminare definitivamente ${selectedIds.length} controparti selezionate?\n\nI collegamenti storici verranno trasferiti alla controparte attiva equivalente quando possibile. L’operazione è irreversibile.`
+    );
+    if (!confirmed) return;
+
+    setBulkWorking(true);
+    setMessage("");
+    const errors: string[] = [];
+
+    for (const id of selectedIds) {
+      try {
+        await permanentlyDeleteTrashItem("counterparty", id);
+      } catch (error) {
+        const item = counterparties.find((entry) => entry.id === id);
+        errors.push(
+          `${item?.display_name || `Controparte ${id}`}: ${
+            error instanceof Error ? error.message : "eliminazione non riuscita"
+          }`
+        );
+      }
+    }
+
+    await Promise.all([loadTrash(), onRefresh()]);
+    setBulkWorking(false);
+    setMessage(
+      errors.length === 0
+        ? "Controparti selezionate eliminate definitivamente."
+        : `Operazione completata con ${errors.length} elementi non eliminati: ${errors.join(" · ")}`
+    );
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -100,13 +147,51 @@ export default function TrashCounterpartiesPage({
         </section>
       ) : (
         <section className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={
+                  counterparties.length > 0 &&
+                  selectedIds.length === counterparties.length
+                }
+                onChange={(event) =>
+                  setSelectedIds(
+                    event.target.checked
+                      ? counterparties.map((item) => item.id)
+                      : []
+                  )
+                }
+                className="h-4 w-4 rounded border-neutral-300"
+              />
+              Seleziona tutte
+            </label>
+            <button
+              type="button"
+              onClick={() => void handleBulkDelete()}
+              disabled={selectedIds.length === 0 || bulkWorking}
+              className="rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
+            >
+              {bulkWorking
+                ? "Eliminazione..."
+                : `Elimina definitivamente (${selectedIds.length})`}
+            </button>
+          </div>
           {counterparties.map((item) => (
             <article
               key={item.id}
               className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+                <div className="flex min-w-0 gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={() => toggleSelection(item.id)}
+                    aria-label={`Seleziona ${item.display_name}`}
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-neutral-300"
+                  />
+                  <div>
                   <h3 className="text-lg font-semibold">
                     {item.display_name}
                   </h3>
@@ -125,6 +210,7 @@ export default function TrashCounterpartiesPage({
                       Motivo: {item.delete_reason}
                     </p>
                   )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">

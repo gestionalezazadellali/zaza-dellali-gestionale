@@ -162,30 +162,105 @@ export async function POST(request: NextRequest) {
 
       await deleteOne("contacts", id, profile.studio_id);
     } else if (resource === "counterparty") {
+      const { data: deletedCounterparty, error: counterpartyError } =
+        await adminClient
+          .from("counterparties")
+          .select("id, name, display_name, normalized_name")
+          .eq("id", id)
+          .eq("studio_id", profile.studio_id)
+          .not("deleted_at", "is", null)
+          .maybeSingle();
+      if (counterpartyError) throw counterpartyError;
+      if (!deletedCounterparty) {
+        return NextResponse.json(
+          { error: "Controparte non presente nel cestino." },
+          { status: 404 }
+        );
+      }
+
+      const baseName = stripDeletedSuffix(
+        deletedCounterparty.display_name || deletedCounterparty.name
+      );
+      const baseNormalizedName = normalizeName(baseName);
+      const { data: activeCounterparties, error: activeError } =
+        await adminClient
+          .from("counterparties")
+          .select("id, name, display_name, normalized_name")
+          .eq("studio_id", profile.studio_id)
+          .is("deleted_at", null)
+          .neq("id", id);
+      if (activeError) throw activeError;
+
+      const canonical = (activeCounterparties ?? []).find(
+        (item) =>
+          normalizeName(item.display_name || item.name) === baseNormalizedName ||
+          normalizeName(item.normalized_name || "") === baseNormalizedName
+      );
+
       const [{ count: directCases, error: directError }, { count: links, error: linkError }] =
         await Promise.all([
-          adminClient
-            .from("cases")
-            .select("*", { count: "exact", head: true })
-            .eq("studio_id", profile.studio_id)
-            .eq("counterparty_id", id),
-          adminClient
-            .from("case_counterparties")
-            .select("*", { count: "exact", head: true })
-            .eq("studio_id", profile.studio_id)
-            .eq("counterparty_id", id),
+          adminClient.from("cases").select("*", { count: "exact", head: true })
+            .eq("studio_id", profile.studio_id).eq("counterparty_id", id),
+          adminClient.from("case_counterparties").select("*", { count: "exact", head: true })
+            .eq("studio_id", profile.studio_id).eq("counterparty_id", id),
         ]);
-
       if (directError) throw directError;
       if (linkError) throw linkError;
-      if ((directCases ?? 0) > 0 || (links ?? 0) > 0) {
+
+      if (((directCases ?? 0) > 0 || (links ?? 0) > 0) && !canonical) {
         return NextResponse.json(
           {
             error:
-              "La controparte è collegata a una o più pratiche. Rimuovi prima i collegamenti.",
+              "La controparte è collegata a pratiche e non è stata trovata una controparte attiva equivalente a cui trasferire i collegamenti.",
           },
           { status: 409 }
         );
+      }
+
+      if (canonical) {
+        const { error: casesUpdateError } = await adminClient
+          .from("cases")
+          .update({
+            counterparty_id: canonical.id,
+            defendant_name_raw: canonical.display_name || canonical.name,
+          })
+          .eq("studio_id", profile.studio_id)
+          .eq("counterparty_id", id);
+        if (casesUpdateError) throw casesUpdateError;
+
+        const { data: oldLinks, error: oldLinksError } = await adminClient
+          .from("case_counterparties")
+          .select("id, case_id")
+          .eq("studio_id", profile.studio_id)
+          .eq("counterparty_id", id);
+        if (oldLinksError) throw oldLinksError;
+
+        for (const link of oldLinks ?? []) {
+          const { data: existingLink, error: existingLinkError } =
+            await adminClient
+              .from("case_counterparties")
+              .select("id")
+              .eq("studio_id", profile.studio_id)
+              .eq("case_id", link.case_id)
+              .eq("counterparty_id", canonical.id)
+              .limit(1)
+              .maybeSingle();
+          if (existingLinkError) throw existingLinkError;
+
+          if (!existingLink) {
+            const { error: linkUpdateError } = await adminClient
+              .from("case_counterparties")
+              .update({ counterparty_id: canonical.id })
+              .eq("id", link.id);
+            if (linkUpdateError) throw linkUpdateError;
+          } else {
+            const { error: linkDeleteError } = await adminClient
+              .from("case_counterparties")
+              .delete()
+              .eq("id", link.id);
+            if (linkDeleteError) throw linkDeleteError;
+          }
+        }
       }
 
       await deleteOne("counterparties", id, profile.studio_id);
@@ -284,4 +359,17 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function stripDeletedSuffix(value: string) {
+  return value.replace(/\s*\[eliminata\s+#\d+\]\s*$/i, "").trim();
+}
+
+function normalizeName(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("it")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
