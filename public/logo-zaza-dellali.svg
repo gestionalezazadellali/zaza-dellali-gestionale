@@ -5,8 +5,8 @@
       <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0f274d" flood-opacity=".12"/>
     </filter>
   </defs>
-  <circle cx="120" cy="120" r="104" fill="#fff" stroke="#e4e9f1" stroke-width="2" filter="url(#shadow)"/>
-  <text x="120" y="94" text-anchor="middle" fill="#17213a" font-family="Georgia, 'Times New Roman', serif" font-size="13" font-style="italic" font-weight="600">- STUDIO LEGALE -</text>
-  <text x="120" y="132" text-anchor="middle" fill="#101827" font-family="Georgia, 'Times New Roman', serif" font-size="17" font-weight="700" letter-spacing="-.35">ZAZA – DELL’ALI</text>
-  <path d="M76 153h88" stroke="#d8dee8" stroke-width="1"/>
+  <circle cx="120" cy="120" r="110" fill="#fff" stroke="#e4e9f1" stroke-width="2" filter="url(#shadow)"/>
+  <text x="120" y="92" text-anchor="middle" fill="#17213a" font-family="Georgia, 'Times New Roman', serif" font-size="15" font-style="italic" font-weight="600">- STUDIO LEGALE -</text>
+  <text x="120" y="133" text-anchor="middle" fill="#101827" font-family="Georgia, 'Times New Roman', serif" font-size="20" font-weight="700" letter-spacing="-.5">ZAZA – DELL’ALI</text>
+  <path d="M71 155h98" stroke="#d8dee8" stroke-width="1"/>
 </svg>

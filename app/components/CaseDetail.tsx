@@ -59,6 +59,8 @@ type EventForm = {
   date: string;
   time: string;
   end_time: string;
+  add_deadline: boolean;
+  deadline: DeadlineDetails;
 };
 
 type AdjournmentForm = {
@@ -69,7 +71,6 @@ type AdjournmentForm = {
   next_date: string;
   next_time: string;
   next_hearing_task: string;
-  pre_hearing_tasks: string;
   add_deadline: boolean;
   deadline: DeadlineDetails;
 };
@@ -99,6 +100,8 @@ const emptyEventForm: EventForm = {
   date: "",
   time: "09:00",
   end_time: "10:00",
+  add_deadline: false,
+  deadline: emptyDeadlineDetails,
 };
 
 const emptyAdjournmentForm: AdjournmentForm = {
@@ -109,7 +112,6 @@ const emptyAdjournmentForm: AdjournmentForm = {
   next_date: "",
   next_time: "09:00",
   next_hearing_task: "",
-  pre_hearing_tasks: "",
   add_deadline: false,
   deadline: emptyDeadlineDetails,
 };
@@ -218,6 +220,16 @@ export default function CaseDetail({
     setEventForm((current) => ({ ...current, [field]: value }));
   }
 
+  function updateEventDeadlineForm(
+    field: keyof DeadlineDetails,
+    value: string
+  ) {
+    setEventForm((current) => ({
+      ...current,
+      deadline: { ...current.deadline, [field]: value },
+    }));
+  }
+
   function updateAdjournmentForm(
     field: keyof AdjournmentForm,
     value: string | boolean | DeadlineDetails
@@ -304,6 +316,14 @@ export default function CaseDetail({
       return;
     }
 
+    if (
+      eventForm.add_deadline &&
+      (!eventForm.deadline.title.trim() || !eventForm.deadline.date)
+    ) {
+      setMessage("Completa titolo e data della scadenza collegata.");
+      return;
+    }
+
     setSaving(true);
     setMessage("");
 
@@ -340,6 +360,23 @@ export default function CaseDetail({
       return;
     }
 
+    if (eventForm.add_deadline) {
+      try {
+        await insertDeadline(
+          eventForm.deadline,
+          editingEventId ? "modifica_udienza" : "nuova_udienza"
+        );
+      } catch (deadlineError) {
+        setMessage(
+          deadlineError instanceof Error
+            ? `Udienza salvata, ma la scadenza non è stata aggiunta: ${deadlineError.message}`
+            : "Udienza salvata, ma la scadenza non è stata aggiunta."
+        );
+        setSaving(false);
+        return;
+      }
+    }
+
     await addTimelineEntry(
       "udienza",
       editingEventId ? "Udienza modificata" : "Nuova udienza aggiunta",
@@ -371,6 +408,8 @@ export default function CaseDetail({
       date: formatDateInput(start),
       time: formatTimeInput(start),
       end_time: end ? formatTimeInput(end) : "",
+      add_deadline: false,
+      deadline: emptyDeadlineDetails,
     });
     setShowEventForm(true);
     setMessage("");
@@ -574,8 +613,6 @@ export default function CaseDetail({
         next_hearing_at: nextStart,
         next_hearing_task:
           adjournmentForm.next_hearing_task.trim() || null,
-        pre_hearing_tasks:
-          adjournmentForm.pre_hearing_tasks.trim() || null,
       });
 
     if (hearingUpdateError) {
@@ -1034,6 +1071,13 @@ export default function CaseDetail({
           saving={saving}
           message={message}
           onChange={updateEventForm}
+          onDeadlineChange={updateEventDeadlineForm}
+          onAddDeadlineChange={(checked) =>
+            setEventForm((current) => ({
+              ...current,
+              add_deadline: checked,
+            }))
+          }
           onSubmit={handleCreateEvent}
           onClose={() => {
             setShowEventForm(false);
@@ -1569,6 +1613,8 @@ function EventFormModal({
   saving,
   message,
   onChange,
+  onDeadlineChange,
+  onAddDeadlineChange,
   onSubmit,
   onClose,
 }: {
@@ -1577,6 +1623,11 @@ function EventFormModal({
   saving: boolean;
   message: string;
   onChange: (field: keyof EventForm, value: string) => void;
+  onDeadlineChange: (
+    field: keyof DeadlineDetails,
+    value: string
+  ) => void;
+  onAddDeadlineChange: (checked: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
 }) {
@@ -1643,6 +1694,31 @@ function EventFormModal({
               className="w-full rounded-xl border border-neutral-300 px-4 py-3"
             />
           </label>
+
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:col-span-2">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={form.add_deadline}
+                onChange={(event) =>
+                  onAddDeadlineChange(event.target.checked)
+                }
+                className="h-4 w-4"
+              />
+              <span className="font-medium">
+                Aggiungi anche una scadenza collegata
+              </span>
+            </label>
+
+            {form.add_deadline && (
+              <div className="mt-5">
+                <DeadlineFields
+                  value={form.deadline}
+                  onChange={onDeadlineChange}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {message && <p className="mt-5 text-sm">{message}</p>}
@@ -1767,20 +1843,6 @@ function AdjournmentModal({
               value={form.next_hearing_task}
               onChange={(event) =>
                 onChange("next_hearing_task", event.target.value)
-              }
-              className="w-full rounded-xl border border-neutral-300 px-4 py-3"
-            />
-          </label>
-
-          <label className="block sm:col-span-2">
-            <span className="mb-2 block text-sm text-neutral-500">
-              Attività da svolgere prima dell’udienza
-            </span>
-            <textarea
-              rows={3}
-              value={form.pre_hearing_tasks}
-              onChange={(event) =>
-                onChange("pre_hearing_tasks", event.target.value)
               }
               className="w-full rounded-xl border border-neutral-300 px-4 py-3"
             />
