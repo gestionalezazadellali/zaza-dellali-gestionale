@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import AnagraphicFormFields, {
   emptyAnagraphicForm,
@@ -77,6 +77,67 @@ export default function ClientsPage({
   const [saving, setSaving] = useState(false);
   const [deletingClientId, setDeletingClientId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!initialClientId) return;
+
+    const loadedClient = clients.find(
+      (client) => client.id === initialClientId
+    );
+
+    if (loadedClient) {
+      setSelectedClient(loadedClient);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadSelectedClient() {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select(
+          `
+            id,
+            contact_type,
+            first_name,
+            last_name,
+            display_name,
+            fiscal_code,
+            vat_number,
+            email,
+            pec,
+            phone,
+            mobile_phone,
+            organization,
+            job_title,
+            address,
+            city,
+            postal_code,
+            province,
+            notes,
+            needs_review
+          `
+        )
+        .eq("id", initialClientId)
+        .is("deleted_at", null)
+        .single();
+
+      if (cancelled) return;
+
+      if (error) {
+        setMessage(`Impossibile aprire il cliente: ${error.message}`);
+        return;
+      }
+
+      setSelectedClient(data as ClientRecord);
+    }
+
+    loadSelectedClient();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clients, initialClientId]);
 
   const filteredClients = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("it");

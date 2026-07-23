@@ -464,8 +464,6 @@ export default function Home() {
   }
 
   function openClientById(clientId: number) {
-    if (!clients.some((item) => item.id === clientId)) return;
-
     setSelectedClientId(clientId);
     setSelectedCase(null);
     setActiveSection("Clienti");
