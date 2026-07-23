@@ -606,6 +606,7 @@ export default function Home() {
             {activeSection === "Ricerca" && (
               <GlobalSearchPage
                 onOpenCase={openCaseById}
+                onOpenClient={openClientById}
                 onOpenCounterparty={openCounterpartyById}
                 onOpenSection={setActiveSection}
               />

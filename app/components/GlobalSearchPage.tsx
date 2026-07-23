@@ -9,15 +9,18 @@ type SearchResult = {
   title: string;
   subtitle: string;
   caseId?: number;
+  clientId?: number;
   counterpartyId?: number;
 };
 
 export default function GlobalSearchPage({
   onOpenCase,
+  onOpenClient,
   onOpenCounterparty,
   onOpenSection,
 }: {
   onOpenCase: (caseId: number) => void;
+  onOpenClient: (clientId: number) => void;
   onOpenCounterparty: (counterpartyId: number) => void;
   onOpenSection: (section: string) => void;
 }) {
@@ -132,6 +135,7 @@ export default function GlobalSearchPage({
       combined.push({
         id: `contact-${item.id}`,
         category: "Cliente",
+        clientId: item.id,
         title: item.display_name || `Contatto n. ${item.id}`,
         subtitle:
           [
@@ -247,6 +251,11 @@ export default function GlobalSearchPage({
       return;
     }
 
+    if (result.clientId) {
+      onOpenClient(result.clientId);
+      return;
+    }
+
     if (result.counterpartyId) {
       onOpenCounterparty(result.counterpartyId);
       return;
@@ -322,6 +331,8 @@ export default function GlobalSearchPage({
               <span className="rounded-xl border border-neutral-300 px-3 py-2 text-xs">
                 {result.caseId
                   ? "Apri pratica"
+                  : result.clientId
+                    ? "Apri cliente"
                   : result.counterpartyId
                     ? "Apri controparte"
                     : "Apri sezione"}
