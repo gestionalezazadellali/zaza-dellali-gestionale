@@ -533,15 +533,16 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-neutral-100 text-neutral-900">
       <div className="flex min-h-screen">
-        <aside className="flex w-72 shrink-0 flex-col border-r border-neutral-200 bg-white">
-          <div className="border-b border-neutral-200 px-6 py-6">
-            <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">
-              Studio Legale
-            </p>
-            <h1 className="mt-2 text-xl font-semibold">Zaza Dell’Ali</h1>
+        <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-[#f8faff] lg:flex">
+          <div className="flex h-28 items-center justify-center border-b border-slate-200 px-5">
+            <img
+              src="/logo-zaza-dellali.svg"
+              alt="Studio Legale Zaza Dell’Ali"
+              className="h-24 w-24"
+            />
           </div>
 
-          <nav className="flex-1 space-y-1 p-4">
+          <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
             {menuItems.map((item) => (
               <button
                 key={item}
@@ -556,13 +557,14 @@ export default function Home() {
                     setSelectedCase(null);
                   }
                 }}
-                className={`w-full rounded-xl px-4 py-3 text-left text-sm transition ${
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
                   activeSection === item
-                    ? "bg-neutral-900 text-white"
-                    : "text-neutral-700 hover:bg-neutral-100"
+                    ? "bg-[#17376f] font-medium text-white shadow-sm"
+                    : "text-slate-700 hover:bg-slate-100"
                 }`}
               >
-                {item}
+                <MenuIcon item={item} />
+                <span>{item}</span>
               </button>
             ))}
           </nav>
@@ -580,7 +582,7 @@ export default function Home() {
         </aside>
 
         <section className="min-w-0 flex-1">
-          <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
+          <header className="flex h-28 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -592,10 +594,10 @@ export default function Home() {
               </button>
 
               <div className="min-w-0">
-                <p className="truncate text-xs text-neutral-500 sm:text-sm">
+                <p className="truncate text-xs text-slate-500 sm:text-sm">
                   Gestionale dello studio
                 </p>
-                <h2 className="truncate text-xl font-semibold sm:text-2xl">
+                <h2 className="truncate text-xl font-semibold text-slate-900 sm:text-2xl">
                   {activeSection}
                 </h2>
               </div>
@@ -610,7 +612,7 @@ export default function Home() {
             </button>
           </header>
 
-          <div className="p-3 sm:p-6">
+          <div className="p-3 sm:p-5">
             {errorMessage && (
               <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                 {errorMessage}
@@ -621,6 +623,7 @@ export default function Home() {
               <AdvancedDashboard
                 loading={loading}
                 events={events}
+                cases={cases}
                 onOpenCase={openActiveCaseById}
                 onOpenClient={openClientById}
                 onOpenCounterparty={openCounterpartyById}
@@ -774,16 +777,13 @@ export default function Home() {
             className="absolute inset-0 bg-black/50"
           />
 
-          <aside className="relative flex h-full w-[85%] max-w-sm flex-col bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-neutral-200 px-5 py-5">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">
-                  Studio Legale
-                </p>
-                <h1 className="mt-2 text-xl font-semibold">
-                  Zaza Dell’Ali
-                </h1>
-              </div>
+          <aside className="relative flex h-full w-[85%] max-w-sm flex-col bg-[#f8faff] shadow-2xl">
+            <div className="flex h-28 items-center justify-between border-b border-slate-200 px-5">
+              <img
+                src="/logo-zaza-dellali.svg"
+                alt="Studio Legale Zaza Dell’Ali"
+                className="h-24 w-24"
+              />
 
               <button
                 type="button"
@@ -795,7 +795,7 @@ export default function Home() {
               </button>
             </div>
 
-            <nav className="flex-1 space-y-1 overflow-y-auto p-4">
+            <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
               {menuItems.map((item) => (
                 <button
                   key={item}
@@ -810,13 +810,14 @@ export default function Home() {
                       setSelectedCase(null);
                     }
                   }}
-                  className={`w-full rounded-xl px-4 py-3 text-left text-sm transition ${
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition ${
                     activeSection === item
-                      ? "bg-neutral-900 text-white"
-                      : "text-neutral-700 hover:bg-neutral-100"
+                      ? "bg-[#17376f] font-medium text-white"
+                      : "text-slate-700 hover:bg-slate-100"
                   }`}
                 >
-                  {item}
+                  <MenuIcon item={item} />
+                  <span>{item}</span>
                 </button>
               ))}
             </nav>
@@ -842,6 +843,96 @@ export default function Home() {
       )}
 
     </main>
+  );
+}
+
+function MenuIcon({ item }: { item: string }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true,
+  };
+
+  if (item === "Dashboard") {
+    return (
+      <svg {...common}>
+        <path d="m3 11 9-8 9 8" />
+        <path d="M5 10v10h14V10M9 20v-6h6v6" />
+      </svg>
+    );
+  }
+  if (item === "Clienti" || item === "Controparti" || item === "Utenti") {
+    return (
+      <svg {...common}>
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3.5 20c.5-4 2.3-6 5.5-6s5 2 5.5 6M16 5.5a3 3 0 0 1 0 5.5M16 14c2.8.2 4.3 2.1 4.5 5" />
+      </svg>
+    );
+  }
+  if (item === "Pratiche" || item === "Fatture") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="7" width="18" height="13" rx="2" />
+        <path d="M8 7V4h8v3M3 12h18M10 12v2h4v-2" />
+      </svg>
+    );
+  }
+  if (item === "Calendario" || item === "Scadenze") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M7 3v4M17 3v4M3 10h18M8 15h3" />
+      </svg>
+    );
+  }
+  if (item === "Udienze") {
+    return (
+      <svg {...common}>
+        <path d="m14 4 6 6M12.5 5.5l3-3 6 6-3 3zM9 9l6 6M7.5 10.5l3-3 6 6-3 3zM3 21h12M5 18h8" />
+      </svg>
+    );
+  }
+  if (item === "Ricerca") {
+    return (
+      <svg {...common}>
+        <circle cx="10.5" cy="10.5" r="6.5" />
+        <path d="m16 16 5 5" />
+      </svg>
+    );
+  }
+  if (item === "Documenti") {
+    return (
+      <svg {...common}>
+        <path d="M6 2h8l4 4v16H6zM14 2v5h5M9 12h6M9 16h6" />
+      </svg>
+    );
+  }
+  if (item === "Cestino") {
+    return (
+      <svg {...common}>
+        <path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" />
+      </svg>
+    );
+  }
+  if (item === "Backup") {
+    return (
+      <svg {...common}>
+        <path d="M7 18a5 5 0 0 1 .5-10A7 7 0 0 1 21 10.5 4 4 0 0 1 19 18H7z" />
+        <path d="m9 14 3-3 3 3M12 11v8" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z" />
+    </svg>
   );
 }
 

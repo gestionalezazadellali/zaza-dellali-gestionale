@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import GlobalSearchPage from "./GlobalSearchPage";
+import {
+  getCounterpartyNames,
+  type CaseRecord,
+} from "./CasesPage";
 
 type CalendarEvent = {
   id: number;
@@ -25,6 +29,7 @@ type UpdateRecord = {
 
 export default function AdvancedDashboard({
   events,
+  cases,
   loading,
   onOpenCase,
   onOpenClient,
@@ -32,6 +37,7 @@ export default function AdvancedDashboard({
   onOpenSection,
 }: {
   events: CalendarEvent[];
+  cases: CaseRecord[];
   loading: boolean;
   onOpenCase: (caseId: number) => void;
   onOpenClient: (clientId: number) => void;
@@ -63,26 +69,46 @@ export default function AdvancedDashboard({
 
       const activityUpdates: UpdateRecord[] = (
         activitiesResult.data ?? []
-      ).map((item) => ({
-        id: `activity-${item.id}`,
-        title: item.title,
-        detail:
-          item.description ||
-          item.activity_type?.replaceAll("_", " ") ||
-          "Aggiornamento pratica",
-        date: item.activity_at,
-        caseId: item.case_id,
-      }));
+      ).map((item) => {
+        const linkedCase = cases.find(
+          (caseRecord) => caseRecord.id === item.case_id
+        );
+        return {
+          id: `activity-${item.id}`,
+          title: getCaseLabel(linkedCase) || item.title,
+          detail:
+            [item.title, item.description].filter(Boolean).join(" · ") ||
+            item.activity_type?.replaceAll("_", " ") ||
+            "Aggiornamento pratica",
+          date: item.activity_at,
+          caseId: item.case_id,
+        };
+      });
 
       const auditUpdates: UpdateRecord[] = (auditResult.data ?? []).map(
-        (item) => ({
-          id: `audit-${item.id}`,
-          title: auditTitle(item.action, item.entity_type),
-          detail:
-            getAuditDisplayName(item.new_data) ||
-            `${item.entity_type || "elemento"} ${item.entity_id || ""}`.trim(),
-          date: item.created_at,
-        })
+        (item) => {
+          const linkedCase = findAuditCase(
+            cases,
+            item.entity_type,
+            item.entity_id,
+            item.new_data
+          );
+          return {
+            id: `audit-${item.id}`,
+            title:
+              getCaseLabel(linkedCase) ||
+              getAuditDisplayName(item.new_data) ||
+              "Aggiornamento gestionale",
+            detail: [
+              auditTitle(item.action, item.entity_type),
+              getAuditDisplayName(item.new_data),
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            date: item.created_at,
+            caseId: linkedCase?.id,
+          };
+        }
       );
 
       setUpdates(
@@ -96,7 +122,7 @@ export default function AdvancedDashboard({
     }
 
     void loadUpdates();
-  }, []);
+  }, [cases]);
 
   const now = Date.now();
   const upcomingHearings = useMemo(
@@ -157,6 +183,7 @@ export default function AdvancedDashboard({
         <Panel title={`Prossime scadenze (${upcomingDeadlines.length})`}>
           <EventList
             events={upcomingDeadlines}
+            cases={cases}
             emptyText="Nessuna scadenza futura."
             onOpenCase={onOpenCase}
           />
@@ -165,6 +192,7 @@ export default function AdvancedDashboard({
         <Panel title={`Prossime udienze (${upcomingHearings.length})`}>
           <EventList
             events={upcomingHearings}
+            cases={cases}
             emptyText="Nessuna udienza futura."
             onOpenCase={onOpenCase}
           />
@@ -220,10 +248,12 @@ function Panel({
 
 function EventList({
   events,
+  cases,
   emptyText,
   onOpenCase,
 }: {
   events: CalendarEvent[];
+  cases: CaseRecord[];
   emptyText: string;
   onOpenCase: (caseId: number) => void;
 }) {
@@ -233,30 +263,84 @@ function EventList({
 
   return (
     <div className="max-h-[25rem] divide-y divide-neutral-100 overflow-y-auto pr-1">
-      {events.map((event) => (
-        <button
-          key={event.id}
-          type="button"
-          disabled={!event.case_id}
-          onClick={() => event.case_id && onOpenCase(event.case_id)}
-          className="grid w-full grid-cols-[3.2rem_1fr_auto] items-center gap-3 px-1 py-3 text-left transition hover:bg-neutral-50 disabled:cursor-default"
-        >
-          <DateBlock value={event.start_at} />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{event.title}</p>
-            {event.description && (
-              <p className="mt-0.5 truncate text-xs text-neutral-500">
-                {event.description}
+      {events.map((event) => {
+        const caseRecord = cases.find((item) => item.id === event.case_id);
+        return (
+          <button
+            key={event.id}
+            type="button"
+            disabled={!event.case_id}
+            onClick={() => event.case_id && onOpenCase(event.case_id)}
+            className="grid w-full grid-cols-[3.2rem_1fr_auto] items-center gap-3 px-1 py-3 text-left transition hover:bg-neutral-50 disabled:cursor-default"
+          >
+            <DateBlock value={event.start_at} />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold">
+                {getCaseLabel(caseRecord) || event.title}
               </p>
-            )}
-          </div>
-          <span className="text-xs font-medium text-neutral-600">
-            {formatTime(event.start_at)}
-          </span>
-        </button>
-      ))}
+              <p className="mt-0.5 truncate text-xs text-neutral-500">
+                {event.description || event.title}
+              </p>
+            </div>
+            <span className="text-xs font-medium text-neutral-600">
+              {formatTime(event.start_at)}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
+}
+
+function getCaseLabel(caseRecord?: CaseRecord) {
+  if (!caseRecord) return "";
+  const contact = Array.isArray(caseRecord.contacts)
+    ? caseRecord.contacts[0]
+    : caseRecord.contacts;
+  const claimant =
+    contact?.display_name ||
+    caseRecord.claimant_name_raw ||
+    caseRecord.title ||
+    "Parte";
+  const defendant =
+    getCounterpartyNames(caseRecord).join(", ") ||
+    caseRecord.defendant_name_raw ||
+    "Controparte";
+  return `${claimant} c. ${defendant}`;
+}
+
+function findAuditCase(
+  cases: CaseRecord[],
+  entityType: string | null,
+  entityId: string | number | null,
+  newData: unknown
+) {
+  const record =
+    newData && typeof newData === "object"
+      ? (newData as Record<string, unknown>)
+      : {};
+  const directCaseId = Number(
+    record.case_id ||
+      (entityType === "cases" || entityType === "case" ? entityId : 0)
+  );
+  if (directCaseId) {
+    return cases.find((item) => item.id === directCaseId);
+  }
+
+  const numericEntityId = Number(entityId || 0);
+  if (
+    numericEntityId &&
+    ["contacts", "contact", "clients", "client"].includes(entityType || "")
+  ) {
+    return cases.find((item) => item.client_contact_id === numericEntityId);
+  }
+  if (
+    numericEntityId &&
+    ["counterparties", "counterparty"].includes(entityType || "")
+  ) {
+    return cases.find((item) => item.counterparty_id === numericEntityId);
+  }
+  return undefined;
 }
 
 function DateBlock({ value }: { value: string }) {
