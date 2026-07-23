@@ -54,6 +54,7 @@ export default function DeadlinesPage({
   const [saving, setSaving] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState<number | null>(null);
   const [currentTime] = useState(Date.now);
+  const [showExpired, setShowExpired] = useState(false);
   const [message, setMessage] = useState("");
 
   const deadlines = useMemo(
@@ -65,6 +66,27 @@ export default function DeadlinesPage({
             new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
         ),
     [events]
+  );
+
+  const visibleDeadlines = useMemo(
+    () =>
+      deadlines.filter((item) => {
+        const completed = item.status === "completato";
+        const expired =
+          !completed && new Date(item.start_at).getTime() < currentTime;
+        return !expired || showExpired;
+      }),
+    [currentTime, deadlines, showExpired]
+  );
+
+  const expiredCount = useMemo(
+    () =>
+      deadlines.filter(
+        (item) =>
+          item.status !== "completato" &&
+          new Date(item.start_at).getTime() < currentTime
+      ).length,
+    [currentTime, deadlines]
   );
 
   function updateForm(field: keyof DeadlineForm, value: string) {
@@ -104,6 +126,19 @@ export default function DeadlinesPage({
 
       if (error) throw error;
 
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await supabase.from("case_activities").insert({
+        studio_id: studioId,
+        case_id: Number(form.case_id),
+        activity_type: "scadenza",
+        title: "Nuova scadenza aggiunta",
+        description: form.title.trim(),
+        activity_at: startAt,
+        created_by: user?.id ?? null,
+      });
+
       await onRefresh();
       setForm(emptyForm);
       setShowForm(false);
@@ -134,6 +169,22 @@ export default function DeadlinesPage({
     if (error) {
       setMessage(`Errore: ${error.message}`);
       return;
+    }
+
+    const completedItem = deadlines.find((item) => item.id === eventId);
+    if (completedItem?.case_id) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await supabase.from("case_activities").insert({
+        studio_id: studioId,
+        case_id: completedItem.case_id,
+        activity_type: "scadenza",
+        title: "Scadenza completata",
+        description: completedItem.title,
+        activity_at: new Date().toISOString(),
+        created_by: user?.id ?? null,
+      });
     }
 
     await onRefresh();
@@ -209,15 +260,27 @@ export default function DeadlinesPage({
         </div>
 
         {message && <p className="mt-4 text-sm">{message}</p>}
+
+        {expiredCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowExpired((current) => !current)}
+            className="mt-4 rounded-xl border border-neutral-300 px-4 py-2 text-sm"
+          >
+            {showExpired
+              ? "Nascondi scadenze scadute"
+              : `Mostra scadenze scadute (${expiredCount})`}
+          </button>
+        )}
       </section>
 
       <section className="space-y-3">
-        {deadlines.length === 0 ? (
+        {visibleDeadlines.length === 0 ? (
           <div className="rounded-2xl border border-neutral-200 bg-white p-8 text-sm text-neutral-500">
             Nessuna scadenza presente.
           </div>
         ) : (
-          deadlines.map((item) => {
+          visibleDeadlines.map((item) => {
             const caseRecord = cases.find(
               (caseItem) => caseItem.id === item.case_id
             );

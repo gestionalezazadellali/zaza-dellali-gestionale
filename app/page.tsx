@@ -109,6 +109,7 @@ export default function Home() {
     number | null
   >(null);
   const [newCaseClientId, setNewCaseClientId] = useState<number | null>(null);
+  const [editCaseId, setEditCaseId] = useState<number | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const hearingEvents = useMemo(
@@ -498,6 +499,12 @@ export default function Home() {
     setActiveSection("Controparti");
   }
 
+  function openCaseEditor(caseId: number) {
+    setSelectedCase(null);
+    setEditCaseId(caseId);
+    setActiveSection("Pratiche");
+  }
+
   if (!sessionChecked) {
     return (
       <main className="grid min-h-screen place-items-center bg-neutral-950 text-white">
@@ -700,6 +707,7 @@ export default function Home() {
                   }
                   onOpenClient={openClientById}
                   onOpenCounterparty={openCounterpartyById}
+                  onEditCase={openCaseEditor}
                   events={
                     events.filter(
                       (event) => event.case_id === selectedCase.id
@@ -716,9 +724,11 @@ export default function Home() {
                   counterparties={counterparties}
                   loading={loading}
                   initialClientId={newCaseClientId}
+                  initialEditCaseId={editCaseId}
                   onRefresh={refreshAllData}
                   onOpenCase={setSelectedCase}
                   onInitialClientHandled={() => setNewCaseClientId(null)}
+                  onInitialEditHandled={() => setEditCaseId(null)}
                 />
               ))}
 

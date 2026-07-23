@@ -190,12 +190,67 @@ export async function POST(request: NextRequest) {
 
       await deleteOne("counterparties", id, profile.studio_id);
     } else if (resource === "case") {
+      const { data: invoices, error: invoicesReadError } = await adminClient
+        .from("invoices")
+        .select("id")
+        .eq("studio_id", profile.studio_id)
+        .eq("case_id", id);
+      if (invoicesReadError) throw invoicesReadError;
+
+      const invoiceIds = (invoices ?? []).map((invoice) => invoice.id);
+      if (invoiceIds.length > 0) {
+        const { error: paymentsError } = await adminClient
+          .from("payments")
+          .delete()
+          .eq("studio_id", profile.studio_id)
+          .in("invoice_id", invoiceIds);
+        if (paymentsError) throw paymentsError;
+      }
+
+      const { data: titles, error: titlesReadError } = await adminClient
+        .from("case_titles")
+        .select("id")
+        .eq("studio_id", profile.studio_id)
+        .eq("case_id", id);
+      if (titlesReadError) throw titlesReadError;
+
+      const titleIds = (titles ?? []).map((title) => title.id);
+      if (titleIds.length > 0) {
+        const { error: titleActionsError } = await adminClient
+          .from("enforcement_actions")
+          .delete()
+          .eq("studio_id", profile.studio_id)
+          .in("case_title_id", titleIds);
+        if (titleActionsError) throw titleActionsError;
+      }
+
+      const { error: relatedActionsError } = await adminClient
+        .from("enforcement_actions")
+        .delete()
+        .eq("studio_id", profile.studio_id)
+        .eq("related_case_id", id);
+      if (relatedActionsError) throw relatedActionsError;
+
+      const { data: caseEvents, error: eventsReadError } = await adminClient
+        .from("events")
+        .select("id")
+        .eq("studio_id", profile.studio_id)
+        .eq("case_id", id);
+      if (eventsReadError) throw eventsReadError;
+
+      const eventIds = (caseEvents ?? []).map((event) => event.id);
+      if (eventIds.length > 0) {
+        const { error: hearingUpdatesError } = await adminClient
+          .from("hearing_updates")
+          .delete()
+          .eq("studio_id", profile.studio_id)
+          .in("event_id", eventIds);
+        if (hearingUpdatesError) throw hearingUpdatesError;
+      }
+
       const tables = [
-        "payments",
         "invoices",
-        "enforcement_actions",
         "case_titles",
-        "hearing_updates",
         "case_activities",
         "events",
         "case_documents",

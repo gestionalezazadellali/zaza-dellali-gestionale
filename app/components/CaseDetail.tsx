@@ -16,6 +16,10 @@ import CaseTitlesModule, {
   type CaseTitleRecord,
   type EnforcementActionRecord,
 } from "./CaseTitlesModule";
+import DeadlineFields, {
+  emptyDeadlineDetails,
+  type DeadlineDetails,
+} from "./DeadlineFields";
 
 export type CalendarEvent = {
   id: number;
@@ -66,6 +70,26 @@ type AdjournmentForm = {
   next_time: string;
   next_hearing_task: string;
   pre_hearing_tasks: string;
+  add_deadline: boolean;
+  deadline: DeadlineDetails;
+};
+
+type ActivityRecord = {
+  id: number;
+  activity_type: string;
+  title: string;
+  description: string | null;
+  activity_at: string;
+  created_by: string | null;
+  author_name: string;
+};
+
+type ActivityForm = {
+  activity_type: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
 };
 
 const emptyEventForm: EventForm = {
@@ -86,6 +110,16 @@ const emptyAdjournmentForm: AdjournmentForm = {
   next_time: "09:00",
   next_hearing_task: "",
   pre_hearing_tasks: "",
+  add_deadline: false,
+  deadline: emptyDeadlineDetails,
+};
+
+const emptyActivityForm: ActivityForm = {
+  activity_type: "telefonata",
+  title: "",
+  description: "",
+  date: new Date().toISOString().slice(0, 10),
+  time: new Date().toTimeString().slice(0, 5),
 };
 
 export default function CaseDetail({
@@ -94,6 +128,7 @@ export default function CaseDetail({
   client,
   onOpenClient,
   onOpenCounterparty,
+  onEditCase,
   events,
   onBack,
   onRefresh,
@@ -103,20 +138,32 @@ export default function CaseDetail({
   client: CaseClientRecord | null;
   onOpenClient: (clientId: number) => void;
   onOpenCounterparty: (counterpartyId: number) => void;
+  onEditCase: (caseId: number) => void;
   events: CalendarEvent[];
   onBack: () => void;
   onRefresh: () => Promise<void>;
 }) {
   const [showEventForm, setShowEventForm] = useState(false);
   const [showAdjournmentForm, setShowAdjournmentForm] = useState(false);
+  const [showDeadlineForm, setShowDeadlineForm] = useState(false);
+  const [showActivityForm, setShowActivityForm] = useState(false);
+  const [editingDeadlineId, setEditingDeadlineId] = useState<number | null>(
+    null
+  );
   const [eventForm, setEventForm] = useState<EventForm>(emptyEventForm);
   const [adjournmentForm, setAdjournmentForm] =
     useState<AdjournmentForm>(emptyAdjournmentForm);
+  const [deadlineForm, setDeadlineForm] = useState<DeadlineDetails>(
+    emptyDeadlineDetails
+  );
+  const [activityForm, setActivityForm] =
+    useState<ActivityForm>(emptyActivityForm);
   const [saving, setSaving] = useState(false);
   const [deletingEventId, setDeletingEventId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [titles, setTitles] = useState<CaseTitleRecord[]>([]);
   const [actions, setActions] = useState<EnforcementActionRecord[]>([]);
+  const [timeline, setTimeline] = useState<ActivityRecord[]>([]);
 
   const hearings = useMemo(
     () =>
@@ -143,13 +190,34 @@ export default function CaseDetail({
     [events]
   );
 
+  const deadlines = useMemo(
+    () =>
+      events
+        .filter((event) => event.is_deadline)
+        .sort(
+          (a, b) =>
+            new Date(a.start_at).getTime() - new Date(b.start_at).getTime()
+        ),
+    [events]
+  );
+
+  const nextDeadline = useMemo(
+    () =>
+      deadlines.find(
+        (event) =>
+          event.status !== "completato" &&
+          new Date(event.start_at).getTime() >= Date.now()
+      ) ?? null,
+    [deadlines]
+  );
+
   function updateEventForm(field: keyof EventForm, value: string) {
     setEventForm((current) => ({ ...current, [field]: value }));
   }
 
   function updateAdjournmentForm(
     field: keyof AdjournmentForm,
-    value: string
+    value: string | boolean | DeadlineDetails
   ) {
     setAdjournmentForm((current) => ({
       ...current,
@@ -157,8 +225,72 @@ export default function CaseDetail({
     }));
   }
 
+  function updateDeadlineForm(
+    field: keyof DeadlineDetails,
+    value: string
+  ) {
+    setDeadlineForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateAdjournmentDeadline(
+    field: keyof DeadlineDetails,
+    value: string
+  ) {
+    setAdjournmentForm((current) => ({
+      ...current,
+      deadline: { ...current.deadline, [field]: value },
+    }));
+  }
+
+  function updateActivityForm(field: keyof ActivityForm, value: string) {
+    setActivityForm((current) => ({ ...current, [field]: value }));
+  }
+
   function makeIso(date: string, time: string) {
     return new Date(`${date}T${time}:00`).toISOString();
+  }
+
+  async function addTimelineEntry(
+    activityType: string,
+    title: string,
+    description: string | null,
+    activityAt = new Date().toISOString()
+  ) {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    await supabase.from("case_activities").insert({
+      studio_id: studioId,
+      case_id: caseRecord.id,
+      activity_type: activityType,
+      title,
+      description,
+      activity_at: activityAt,
+      created_by: user?.id ?? null,
+    });
+  }
+
+  async function insertDeadline(
+    details: DeadlineDetails,
+    source: string
+  ) {
+    const { error } = await supabase.from("events").insert({
+      studio_id: studioId,
+      case_id: caseRecord.id,
+      event_type: "SCADENZA",
+      title: details.title.trim(),
+      description: details.description.trim() || null,
+      start_at: makeIso(details.date, details.time || "18:00"),
+      end_at: null,
+      all_day: false,
+      is_hearing: false,
+      is_deadline: true,
+      status: "aperto",
+      source,
+    });
+
+    if (error) throw error;
   }
 
   async function handleCreateEvent(event: FormEvent<HTMLFormElement>) {
@@ -172,12 +304,10 @@ export default function CaseDetail({
     setSaving(true);
     setMessage("");
 
-    const isHearing = eventForm.kind === "hearing";
-
     const { error } = await supabase.from("events").insert({
       studio_id: studioId,
       case_id: caseRecord.id,
-      event_type: isHearing ? "UDIENZA" : "ATTIVITA",
+      event_type: "UDIENZA",
       title: eventForm.title.trim(),
       description: eventForm.description.trim() || null,
       start_at: makeIso(eventForm.date, eventForm.time),
@@ -185,7 +315,7 @@ export default function CaseDetail({
         ? makeIso(eventForm.date, eventForm.end_time)
         : null,
       all_day: false,
-      is_hearing: isHearing,
+      is_hearing: true,
       is_deadline: false,
       status: "aperto",
       source: "inserimento_manuale",
@@ -197,11 +327,146 @@ export default function CaseDetail({
       return;
     }
 
+    await addTimelineEntry(
+      "udienza",
+      "Nuova udienza aggiunta",
+      eventForm.title.trim(),
+      makeIso(eventForm.date, eventForm.time)
+    );
     await refreshEverything();
     setEventForm(emptyEventForm);
     setShowEventForm(false);
     setMessage("Evento aggiunto correttamente.");
     setSaving(false);
+  }
+
+  async function handleCreateDeadline(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!deadlineForm.title.trim() || !deadlineForm.date) {
+      setMessage("Inserisci titolo e data della scadenza.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      if (editingDeadlineId) {
+        const { error } = await supabase
+          .from("events")
+          .update({
+            title: deadlineForm.title.trim(),
+            description: deadlineForm.description.trim() || null,
+            start_at: makeIso(
+              deadlineForm.date,
+              deadlineForm.time || "18:00"
+            ),
+          })
+          .eq("id", editingDeadlineId)
+          .eq("studio_id", studioId);
+
+        if (error) throw error;
+      } else {
+        await insertDeadline(deadlineForm, "scheda_pratica");
+      }
+      await addTimelineEntry(
+        "scadenza",
+        editingDeadlineId
+          ? "Scadenza modificata"
+          : "Nuova scadenza aggiunta",
+        deadlineForm.title.trim(),
+        makeIso(deadlineForm.date, deadlineForm.time || "18:00")
+      );
+      await refreshEverything();
+      setDeadlineForm(emptyDeadlineDetails);
+      setEditingDeadlineId(null);
+      setShowDeadlineForm(false);
+      setMessage(
+        editingDeadlineId
+          ? "Scadenza modificata correttamente."
+          : "Scadenza aggiunta correttamente."
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Errore: ${error.message}`
+          : "Errore durante il salvataggio della scadenza."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openDeadlineForEdit(item: CalendarEvent) {
+    const date = new Date(item.start_at);
+    setEditingDeadlineId(item.id);
+    setDeadlineForm({
+      title: item.title,
+      description: item.description ?? "",
+      date: date.toISOString().slice(0, 10),
+      time: date.toTimeString().slice(0, 5),
+    });
+    setShowDeadlineForm(true);
+    setMessage("");
+  }
+
+  async function toggleDeadlineCompleted(item: CalendarEvent) {
+    const completed = item.status === "completato";
+    const { error } = await supabase
+      .from("events")
+      .update({
+        status: completed ? "aperto" : "completato",
+        completed_at: completed ? null : new Date().toISOString(),
+      })
+      .eq("id", item.id)
+      .eq("studio_id", studioId);
+
+    if (error) {
+      setMessage(`Errore: ${error.message}`);
+      return;
+    }
+
+    await addTimelineEntry(
+      "scadenza",
+      completed ? "Scadenza riaperta" : "Scadenza completata",
+      item.title
+    );
+    await refreshEverything();
+    setMessage(completed ? "Scadenza riaperta." : "Scadenza completata.");
+  }
+
+  async function handleCreateActivity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!activityForm.title.trim() || !activityForm.date) {
+      setMessage("Inserisci titolo e data dell’attività.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage("");
+
+    try {
+      await addTimelineEntry(
+        activityForm.activity_type,
+        activityForm.title.trim(),
+        activityForm.description.trim() || null,
+        makeIso(activityForm.date, activityForm.time || "09:00")
+      );
+      await refreshEverything();
+      setActivityForm(emptyActivityForm);
+      setShowActivityForm(false);
+      setMessage("Attività aggiunta alla Timeline.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Errore: ${error.message}`
+          : "Errore durante il salvataggio dell’attività."
+      );
+    } finally {
+      setSaving(false);
+    }
   }
 
   function openAdjournment(event: CalendarEvent) {
@@ -218,6 +483,15 @@ export default function CaseDetail({
 
     if (!adjournmentForm.event_id || !adjournmentForm.next_date) {
       setMessage("Seleziona l’udienza e inserisci la nuova data.");
+      return;
+    }
+
+    if (
+      adjournmentForm.add_deadline &&
+      (!adjournmentForm.deadline.title.trim() ||
+        !adjournmentForm.deadline.date)
+    ) {
+      setMessage("Completa titolo e data della scadenza collegata.");
       return;
     }
 
@@ -298,6 +572,34 @@ export default function CaseDetail({
       return;
     }
 
+    if (adjournmentForm.add_deadline) {
+      try {
+        await insertDeadline(
+          adjournmentForm.deadline,
+          "rinvio_udienza"
+        );
+      } catch (error) {
+        setMessage(
+          error instanceof Error
+            ? `Rinvio registrato, ma la scadenza non è stata salvata: ${error.message}`
+            : "Rinvio registrato, ma la scadenza non è stata salvata."
+        );
+        setSaving(false);
+        return;
+      }
+    }
+
+    await addTimelineEntry(
+      "rinvio_udienza",
+      "Udienza rinviata",
+      [
+        adjournmentForm.adjournment_reason.trim(),
+        adjournmentForm.next_hearing_task.trim(),
+      ]
+        .filter(Boolean)
+        .join(" · ") || null,
+      nextStart
+    );
     await refreshEverything();
     setAdjournmentForm(emptyAdjournmentForm);
     setShowAdjournmentForm(false);
@@ -345,18 +647,70 @@ export default function CaseDetail({
     setActions((actionData ?? []) as EnforcementActionRecord[]);
   }
 
+  async function loadTimeline() {
+    const { data, error } = await supabase
+      .from("case_activities")
+      .select(
+        "id, activity_type, title, description, activity_at, created_by"
+      )
+      .eq("case_id", caseRecord.id)
+      .order("activity_at", { ascending: false });
+
+    if (error) {
+      setMessage(`Errore Timeline: ${error.message}`);
+      return;
+    }
+
+    const createdByIds = [
+      ...new Set(
+        (data ?? [])
+          .map((item) => item.created_by)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const authorNames = new Map<string, string>();
+
+    if (createdByIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, display_name, first_name, last_name")
+        .in("id", createdByIds);
+
+      for (const profile of profiles ?? []) {
+        authorNames.set(
+          profile.id,
+          profile.display_name ||
+            [profile.first_name, profile.last_name]
+              .filter(Boolean)
+              .join(" ") ||
+            "Utente dello studio"
+        );
+      }
+    }
+
+    setTimeline(
+      (data ?? []).map((item) => ({
+        ...item,
+        author_name: item.created_by
+          ? authorNames.get(item.created_by) || "Utente dello studio"
+          : "Sistema",
+      })) as ActivityRecord[]
+    );
+  }
+
   const loadTitlesAndActionsEffect = useEffectEvent(loadTitlesAndActions);
+  const loadTimelineEffect = useEffectEvent(loadTimeline);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      void loadTitlesAndActionsEffect();
+      void Promise.all([loadTitlesAndActionsEffect(), loadTimelineEffect()]);
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
   }, [caseRecord.id]);
 
   async function refreshEverything() {
-    await Promise.all([onRefresh(), loadTitlesAndActions()]);
+    await Promise.all([onRefresh(), loadTitlesAndActions(), loadTimeline()]);
   }
 
   async function handleDeleteEvent(item: CalendarEvent) {
@@ -435,6 +789,14 @@ export default function CaseDetail({
       <div className="flex flex-wrap gap-3">
         <button
           type="button"
+          onClick={() => onEditCase(caseRecord.id)}
+          className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm"
+        >
+          Modifica pratica
+        </button>
+
+        <button
+          type="button"
           onClick={onBack}
           className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm"
         >
@@ -451,6 +813,19 @@ export default function CaseDetail({
           className="rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
         >
           Nuova udienza
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setEditingDeadlineId(null);
+            setDeadlineForm(emptyDeadlineDetails);
+            setShowDeadlineForm(true);
+            setMessage("");
+          }}
+          className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-medium text-neutral-950"
+        >
+          Nuova scadenza
         </button>
       </div>
 
@@ -535,6 +910,18 @@ export default function CaseDetail({
         <InfoCard label="Stato" value={caseRecord.status} />
       </section>
 
+      <NextDeadlinePanel
+        deadline={nextDeadline}
+        formatDate={formatDate}
+        onAdd={() => {
+          setEditingDeadlineId(null);
+          setDeadlineForm(emptyDeadlineDetails);
+          setShowDeadlineForm(true);
+        }}
+        onEdit={openDeadlineForEdit}
+        onToggleCompleted={toggleDeadlineCompleted}
+      />
+
       <EventPanel
         title={`Udienze (${hearings.length})`}
         events={hearings}
@@ -544,12 +931,27 @@ export default function CaseDetail({
         deletingEventId={deletingEventId}
       />
 
-      <EventPanel
-        title={`Altre attività (${activities.length})`}
-        events={activities}
+      <DeadlinePanel
+        deadlines={deadlines}
         formatDate={formatDate}
+        onEdit={openDeadlineForEdit}
+        onToggleCompleted={toggleDeadlineCompleted}
         onDelete={handleDeleteEvent}
         deletingEventId={deletingEventId}
+      />
+
+      <TimelinePanel
+        activities={timeline}
+        formatDate={formatDate}
+        onAdd={() => {
+          setActivityForm({
+            ...emptyActivityForm,
+            date: new Date().toISOString().slice(0, 10),
+            time: new Date().toTimeString().slice(0, 5),
+          });
+          setShowActivityForm(true);
+          setMessage("");
+        }}
       />
 
       <CaseTitlesModule
@@ -581,10 +983,43 @@ export default function CaseDetail({
           saving={saving}
           message={message}
           onChange={updateAdjournmentForm}
+          onDeadlineChange={updateAdjournmentDeadline}
           onSubmit={handleAdjournment}
           onClose={() => {
             setShowAdjournmentForm(false);
             setAdjournmentForm(emptyAdjournmentForm);
+            setMessage("");
+          }}
+        />
+      )}
+
+      {showDeadlineForm && (
+        <DeadlineFormModal
+          form={deadlineForm}
+          editing={editingDeadlineId !== null}
+          saving={saving}
+          message={message}
+          onChange={updateDeadlineForm}
+          onSubmit={handleCreateDeadline}
+          onClose={() => {
+            setShowDeadlineForm(false);
+            setEditingDeadlineId(null);
+            setDeadlineForm(emptyDeadlineDetails);
+            setMessage("");
+          }}
+        />
+      )}
+
+      {showActivityForm && (
+        <ActivityFormModal
+          form={activityForm}
+          saving={saving}
+          message={message}
+          onChange={updateActivityForm}
+          onSubmit={handleCreateActivity}
+          onClose={() => {
+            setShowActivityForm(false);
+            setActivityForm(emptyActivityForm);
             setMessage("");
           }}
         />
@@ -666,6 +1101,340 @@ function EventPanel({
   );
 }
 
+function NextDeadlinePanel({
+  deadline,
+  formatDate,
+  onAdd,
+  onEdit,
+  onToggleCompleted,
+}: {
+  deadline: CalendarEvent | null;
+  formatDate: (value: string) => string;
+  onAdd: () => void;
+  onEdit: (event: CalendarEvent) => void;
+  onToggleCompleted: (event: CalendarEvent) => Promise<void>;
+}) {
+  return (
+    <article className="rounded-2xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+      <p className="text-xs font-medium uppercase tracking-wide text-amber-800">
+        Prossima scadenza
+      </p>
+
+      {deadline ? (
+        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h4 className="text-lg font-semibold">{deadline.title}</h4>
+            <p className="mt-2 font-medium">{formatDate(deadline.start_at)}</p>
+            <p className="mt-2 text-sm text-neutral-700">
+              {deadline.description || "Nessuna indicazione aggiuntiva."}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => onEdit(deadline)}
+              className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs"
+            >
+              Modifica
+            </button>
+            <button
+              type="button"
+              onClick={() => void onToggleCompleted(deadline)}
+              className="rounded-xl bg-neutral-900 px-3 py-2 text-xs text-white"
+            >
+              Segna completata
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-neutral-600">
+            Nessuna scadenza futura aperta.
+          </p>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
+          >
+            Aggiungi scadenza
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function DeadlinePanel({
+  deadlines,
+  formatDate,
+  onEdit,
+  onToggleCompleted,
+  onDelete,
+  deletingEventId,
+}: {
+  deadlines: CalendarEvent[];
+  formatDate: (value: string) => string;
+  onEdit: (event: CalendarEvent) => void;
+  onToggleCompleted: (event: CalendarEvent) => Promise<void>;
+  onDelete: (event: CalendarEvent) => Promise<void>;
+  deletingEventId: number | null;
+}) {
+  return (
+    <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+      <h4 className="text-lg font-semibold">
+        Scadenze della pratica ({deadlines.length})
+      </h4>
+      <div className="mt-5 space-y-3">
+        {deadlines.length === 0 ? (
+          <p className="text-sm text-neutral-500">Nessuna scadenza presente.</p>
+        ) : (
+          deadlines.map((item) => {
+            const completed = item.status === "completato";
+            return (
+              <div
+                key={item.id}
+                className="rounded-xl border border-neutral-200 p-4"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{item.title}</p>
+                      {completed && (
+                        <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">
+                          Completata
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-sm text-neutral-500">
+                      {formatDate(item.start_at)}
+                    </p>
+                    {item.description && (
+                      <p className="mt-2 text-sm text-neutral-600">
+                        {item.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void onToggleCompleted(item)}
+                      className="rounded-lg border border-neutral-300 px-3 py-2 text-xs"
+                    >
+                      {completed ? "Riapri" : "Completa"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onEdit(item)}
+                      className="rounded-lg border border-neutral-300 px-3 py-2 text-xs"
+                    >
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDelete(item)}
+                      disabled={deletingEventId === item.id}
+                      className="rounded-lg bg-red-600 px-3 py-2 text-xs text-white disabled:opacity-50"
+                    >
+                      {deletingEventId === item.id ? "Eliminazione..." : "Elimina"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </article>
+  );
+}
+
+function TimelinePanel({
+  activities,
+  formatDate,
+  onAdd,
+}: {
+  activities: ActivityRecord[];
+  formatDate: (value: string) => string;
+  onAdd: () => void;
+}) {
+  return (
+    <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-lg font-semibold">Timeline della pratica</h4>
+          <p className="mt-1 text-sm text-neutral-500">
+            Telefonate, PEC, incontri, depositi e aggiornamenti importanti.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
+        >
+          Aggiungi attività
+        </button>
+      </div>
+
+      <div className="mt-6 space-y-4">
+        {activities.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            Nessuna attività registrata.
+          </p>
+        ) : (
+          activities.map((item) => (
+            <div key={item.id} className="border-l-2 border-neutral-300 pl-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs capitalize">
+                  {item.activity_type.replaceAll("_", " ")}
+                </span>
+                <span className="text-xs text-neutral-500">
+                  {formatDate(item.activity_at)} · {item.author_name}
+                </span>
+              </div>
+              <p className="mt-2 font-medium">{item.title}</p>
+              {item.description && (
+                <p className="mt-1 text-sm text-neutral-600">
+                  {item.description}
+                </p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </article>
+  );
+}
+
+function DeadlineFormModal({
+  form,
+  editing,
+  saving,
+  message,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  form: DeadlineDetails;
+  editing: boolean;
+  saving: boolean;
+  message: string;
+  onChange: (field: keyof DeadlineDetails, value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 px-4 py-10">
+      <form
+        onSubmit={onSubmit}
+        className="mx-auto w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-neutral-500">Scadenze della pratica</p>
+            <h3 className="mt-1 text-xl font-semibold">
+              {editing ? "Modifica scadenza" : "Nuova scadenza"}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+          >
+            Chiudi
+          </button>
+        </div>
+        <div className="mt-6">
+          <DeadlineFields value={form} onChange={onChange} />
+        </div>
+        {message && <p className="mt-5 text-sm">{message}</p>}
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-300 px-5 py-3 text-sm"
+          >
+            Annulla
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-xl bg-neutral-900 px-5 py-3 text-sm text-white disabled:opacity-50"
+          >
+            {saving ? "Salvataggio..." : "Salva scadenza"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ActivityFormModal({
+  form,
+  saving,
+  message,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  form: ActivityForm;
+  saving: boolean;
+  message: string;
+  onChange: (field: keyof ActivityForm, value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 px-4 py-10">
+      <form
+        onSubmit={onSubmit}
+        className="mx-auto w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-neutral-500">Timeline della pratica</p>
+            <h3 className="mt-1 text-xl font-semibold">Aggiungi attività</h3>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-neutral-300 px-3 py-2 text-sm">
+            Chiudi
+          </button>
+        </div>
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-2 block text-sm text-neutral-500">Tipo</span>
+            <select
+              value={form.activity_type}
+              onChange={(event) => onChange("activity_type", event.target.value)}
+              className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-3"
+            >
+              <option value="telefonata">Telefonata</option>
+              <option value="email">Email</option>
+              <option value="pec">PEC</option>
+              <option value="incontro">Incontro</option>
+              <option value="deposito">Deposito</option>
+              <option value="nota_interna">Nota interna</option>
+              <option value="altra_attivita">Altra attività</option>
+            </select>
+          </label>
+          <Input label="Titolo *" value={form.title} onChange={(value) => onChange("title", value)} />
+          <Input label="Data *" type="date" value={form.date} onChange={(value) => onChange("date", value)} />
+          <Input label="Ora" type="time" value={form.time} onChange={(value) => onChange("time", value)} />
+          <label className="block sm:col-span-2">
+            <span className="mb-2 block text-sm text-neutral-500">Descrizione</span>
+            <textarea rows={4} value={form.description} onChange={(event) => onChange("description", event.target.value)} className="w-full rounded-xl border border-neutral-300 px-4 py-3" />
+          </label>
+        </div>
+        {message && <p className="mt-5 text-sm">{message}</p>}
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="rounded-xl border border-neutral-300 px-5 py-3 text-sm">Annulla</button>
+          <button type="submit" disabled={saving} className="rounded-xl bg-neutral-900 px-5 py-3 text-sm text-white disabled:opacity-50">
+            {saving ? "Salvataggio..." : "Aggiungi alla Timeline"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function EventFormModal({
   form,
   saving,
@@ -690,9 +1459,7 @@ function EventFormModal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm text-neutral-500">Calendario pratica</p>
-            <h3 className="mt-1 text-xl font-semibold">
-              Nuova udienza o attività
-            </h3>
+            <h3 className="mt-1 text-xl font-semibold">Nuova udienza</h3>
           </div>
           <button
             type="button"
@@ -704,18 +1471,6 @@ function EventFormModal({
         </div>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-2 block text-sm text-neutral-500">Tipo</span>
-            <select
-              value={form.kind}
-              onChange={(event) => onChange("kind", event.target.value)}
-              className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-3"
-            >
-              <option value="hearing">Udienza</option>
-              <option value="activity">Altra attività</option>
-            </select>
-          </label>
-
           <Input
             label="Titolo *"
             value={form.title}
@@ -786,13 +1541,21 @@ function AdjournmentModal({
   saving,
   message,
   onChange,
+  onDeadlineChange,
   onSubmit,
   onClose,
 }: {
   form: AdjournmentForm;
   saving: boolean;
   message: string;
-  onChange: (field: keyof AdjournmentForm, value: string) => void;
+  onChange: (
+    field: keyof AdjournmentForm,
+    value: string | boolean | DeadlineDetails
+  ) => void;
+  onDeadlineChange: (
+    field: keyof DeadlineDetails,
+    value: string
+  ) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
 }) {
@@ -886,6 +1649,31 @@ function AdjournmentModal({
               className="w-full rounded-xl border border-neutral-300 px-4 py-3"
             />
           </label>
+
+          <div className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <label className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                checked={form.add_deadline}
+                onChange={(event) =>
+                  onChange("add_deadline", event.target.checked)
+                }
+                className="h-4 w-4"
+              />
+              <span className="font-medium">
+                Aggiungi anche una scadenza
+              </span>
+            </label>
+
+            {form.add_deadline && (
+              <div className="mt-5">
+                <DeadlineFields
+                  value={form.deadline}
+                  onChange={onDeadlineChange}
+                />
+              </div>
+            )}
+          </div>
         </div>
 
         {message && <p className="mt-5 text-sm">{message}</p>}

@@ -158,9 +158,11 @@ export default function CasesPage({
   counterparties,
   loading,
   initialClientId = null,
+  initialEditCaseId = null,
   onRefresh,
   onOpenCase,
   onInitialClientHandled,
+  onInitialEditHandled,
 }: {
   studioId: string;
   cases: CaseRecord[];
@@ -168,9 +170,11 @@ export default function CasesPage({
   counterparties: CounterpartyOption[];
   loading: boolean;
   initialClientId?: number | null;
+  initialEditCaseId?: number | null;
   onRefresh: () => Promise<void>;
   onOpenCase: (caseRecord: CaseRecord) => void;
   onInitialClientHandled?: () => void;
+  onInitialEditHandled?: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(() => initialClientId !== null);
@@ -198,6 +202,14 @@ export default function CasesPage({
       onInitialClientHandled?.();
     }
   }, [initialClientId, onInitialClientHandled]);
+
+  useEffect(() => {
+    if (initialEditCaseId === null) return;
+
+    const item = cases.find((caseItem) => caseItem.id === initialEditCaseId);
+    if (item) openEditForm(item);
+    onInitialEditHandled?.();
+  }, [cases, initialEditCaseId, onInitialEditHandled]);
 
   const availableCounterparties = useMemo(
     () => mergeCounterpartyOptions(counterparties, additionalCounterparties),
@@ -350,6 +362,21 @@ export default function CasesPage({
         caseData: payload,
         counterpartyIds: form.counterparty_ids,
       });
+
+      if (editingCase) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        await supabase.from("case_activities").insert({
+          studio_id: studioId,
+          case_id: editingCase.id,
+          activity_type: "modifica_pratica",
+          title: "Pratica modificata",
+          description: "Aggiornati i dati della pratica.",
+          activity_at: new Date().toISOString(),
+          created_by: user?.id ?? null,
+        });
+      }
 
       await onRefresh();
 
