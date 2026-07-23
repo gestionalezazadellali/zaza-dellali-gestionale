@@ -147,6 +147,8 @@ export default function CaseDetail({
   const [showAdjournmentForm, setShowAdjournmentForm] = useState(false);
   const [showDeadlineForm, setShowDeadlineForm] = useState(false);
   const [showActivityForm, setShowActivityForm] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<number | null>(null);
   const [editingDeadlineId, setEditingDeadlineId] = useState<number | null>(
     null
   );
@@ -304,22 +306,32 @@ export default function CaseDetail({
     setSaving(true);
     setMessage("");
 
-    const { error } = await supabase.from("events").insert({
-      studio_id: studioId,
-      case_id: caseRecord.id,
-      event_type: "UDIENZA",
+    const payload = {
       title: eventForm.title.trim(),
       description: eventForm.description.trim() || null,
       start_at: makeIso(eventForm.date, eventForm.time),
       end_at: eventForm.end_time
         ? makeIso(eventForm.date, eventForm.end_time)
         : null,
-      all_day: false,
-      is_hearing: true,
-      is_deadline: false,
-      status: "aperto",
-      source: "inserimento_manuale",
-    });
+    };
+
+    const { error } = editingEventId
+      ? await supabase
+          .from("events")
+          .update(payload)
+          .eq("id", editingEventId)
+          .eq("studio_id", studioId)
+      : await supabase.from("events").insert({
+          studio_id: studioId,
+          case_id: caseRecord.id,
+          event_type: "UDIENZA",
+          ...payload,
+          all_day: false,
+          is_hearing: true,
+          is_deadline: false,
+          status: "aperto",
+          source: "inserimento_manuale",
+        });
 
     if (error) {
       setMessage(`Errore: ${error.message}`);
@@ -329,15 +341,38 @@ export default function CaseDetail({
 
     await addTimelineEntry(
       "udienza",
-      "Nuova udienza aggiunta",
+      editingEventId ? "Udienza modificata" : "Nuova udienza aggiunta",
       eventForm.title.trim(),
-      makeIso(eventForm.date, eventForm.time)
+      editingEventId
+        ? new Date().toISOString()
+        : makeIso(eventForm.date, eventForm.time)
     );
     await refreshEverything();
     setEventForm(emptyEventForm);
+    setEditingEventId(null);
     setShowEventForm(false);
-    setMessage("Evento aggiunto correttamente.");
+    setMessage(
+      editingEventId
+        ? "Udienza modificata correttamente."
+        : "Udienza aggiunta correttamente."
+    );
     setSaving(false);
+  }
+
+  function openEventForEdit(item: CalendarEvent) {
+    const start = new Date(item.start_at);
+    const end = item.end_at ? new Date(item.end_at) : null;
+    setEditingEventId(item.id);
+    setEventForm({
+      kind: "hearing",
+      title: item.title,
+      description: item.description ?? "",
+      date: formatDateInput(start),
+      time: formatTimeInput(start),
+      end_time: end ? formatTimeInput(end) : "",
+    });
+    setShowEventForm(true);
+    setMessage("");
   }
 
   async function handleCreateDeadline(event: FormEvent<HTMLFormElement>) {
@@ -768,6 +803,19 @@ export default function CaseDetail({
     }).format(new Date(value));
   }
 
+  function formatDateInput(value: Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatTimeInput(value: Date) {
+    const hours = String(value.getHours()).padStart(2, "0");
+    const minutes = String(value.getMinutes()).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }
+
   const relatedContact = Array.isArray(caseRecord.contacts)
     ? caseRecord.contacts[0]
     : caseRecord.contacts;
@@ -806,6 +854,7 @@ export default function CaseDetail({
         <button
           type="button"
           onClick={() => {
+            setEditingEventId(null);
             setEventForm(emptyEventForm);
             setShowEventForm(true);
             setMessage("");
@@ -935,6 +984,7 @@ export default function CaseDetail({
         events={hearings}
         formatDate={formatDate}
         onAdjourn={openAdjournment}
+        onEdit={openEventForEdit}
         onDelete={handleDeleteEvent}
         deletingEventId={deletingEventId}
       />
@@ -951,6 +1001,8 @@ export default function CaseDetail({
       <TimelinePanel
         activities={timeline}
         formatDate={formatDate}
+        visible={showTimeline}
+        onToggle={() => setShowTimeline((current) => !current)}
         onAdd={() => {
           setActivityForm({
             ...emptyActivityForm,
@@ -973,12 +1025,14 @@ export default function CaseDetail({
       {showEventForm && (
         <EventFormModal
           form={eventForm}
+          editing={editingEventId !== null}
           saving={saving}
           message={message}
           onChange={updateEventForm}
           onSubmit={handleCreateEvent}
           onClose={() => {
             setShowEventForm(false);
+            setEditingEventId(null);
             setEventForm(emptyEventForm);
             setMessage("");
           }}
@@ -1042,6 +1096,7 @@ function EventPanel({
   events,
   formatDate,
   onAdjourn,
+  onEdit,
   onDelete,
   deletingEventId,
 }: {
@@ -1049,6 +1104,7 @@ function EventPanel({
   events: CalendarEvent[];
   formatDate: (value: string) => string;
   onAdjourn?: (event: CalendarEvent) => void;
+  onEdit: (event: CalendarEvent) => void;
   onDelete: (event: CalendarEvent) => Promise<void>;
   deletingEventId: number | null;
 }) {
@@ -1080,6 +1136,13 @@ function EventPanel({
 
                 <div className="flex flex-col items-start gap-2 sm:items-end">
                   <StatusBadge status={event.status} />
+                  <button
+                    type="button"
+                    onClick={() => onEdit(event)}
+                    className="rounded-lg border border-neutral-300 px-3 py-2 text-xs"
+                  >
+                    Modifica
+                  </button>
                   {onAdjourn && event.status !== "rinviato" && (
                     <button
                       type="button"
@@ -1259,10 +1322,14 @@ function DeadlinePanel({
 function TimelinePanel({
   activities,
   formatDate,
+  visible,
+  onToggle,
   onAdd,
 }: {
   activities: ActivityRecord[];
   formatDate: (value: string) => string;
+  visible: boolean;
+  onToggle: () => void;
   onAdd: () => void;
 }) {
   return (
@@ -1274,16 +1341,25 @@ function TimelinePanel({
             Telefonate, PEC, incontri, depositi e aggiornamenti importanti.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
-        >
-          Aggiungi attività
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onToggle}
+            className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm"
+          >
+            {visible ? "Nascondi Timeline" : "Mostra Timeline"}
+          </button>
+          <button
+            type="button"
+            onClick={onAdd}
+            className="rounded-xl bg-neutral-900 px-4 py-2 text-sm text-white"
+          >
+            Aggiungi attività
+          </button>
+        </div>
       </div>
 
-      <div className="mt-6 space-y-4">
+      {visible && <div className="mt-6 space-y-4">
         {activities.length === 0 ? (
           <p className="text-sm text-neutral-500">
             Nessuna attività registrata.
@@ -1308,7 +1384,7 @@ function TimelinePanel({
             </div>
           ))
         )}
-      </div>
+      </div>}
     </article>
   );
 }
@@ -1445,6 +1521,7 @@ function ActivityFormModal({
 
 function EventFormModal({
   form,
+  editing,
   saving,
   message,
   onChange,
@@ -1452,6 +1529,7 @@ function EventFormModal({
   onClose,
 }: {
   form: EventForm;
+  editing: boolean;
   saving: boolean;
   message: string;
   onChange: (field: keyof EventForm, value: string) => void;
@@ -1467,7 +1545,9 @@ function EventFormModal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-sm text-neutral-500">Calendario pratica</p>
-            <h3 className="mt-1 text-xl font-semibold">Nuova udienza</h3>
+            <h3 className="mt-1 text-xl font-semibold">
+              {editing ? "Modifica udienza" : "Nuova udienza"}
+            </h3>
           </div>
           <button
             type="button"
@@ -1536,7 +1616,11 @@ function EventFormModal({
             disabled={saving}
             className="rounded-xl bg-neutral-900 px-5 py-3 text-sm text-white disabled:opacity-50"
           >
-            {saving ? "Salvataggio..." : "Salva evento"}
+            {saving
+              ? "Salvataggio..."
+              : editing
+                ? "Salva modifiche"
+                : "Salva udienza"}
           </button>
         </div>
       </form>

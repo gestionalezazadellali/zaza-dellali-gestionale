@@ -6,7 +6,7 @@
     </filter>
   </defs>
   <circle cx="120" cy="120" r="104" fill="#fff" stroke="#e4e9f1" stroke-width="2" filter="url(#shadow)"/>
-  <text x="120" y="94" text-anchor="middle" fill="#17213a" font-family="Georgia, 'Times New Roman', serif" font-size="15" font-style="italic" font-weight="600">- STUDIO LEGALE -</text>
-  <text x="120" y="132" text-anchor="middle" fill="#101827" font-family="Georgia, 'Times New Roman', serif" font-size="24" font-weight="700">ZAZA – DELL’ALI</text>
-  <path d="M73 153h94" stroke="#d8dee8" stroke-width="1"/>
+  <text x="120" y="94" text-anchor="middle" fill="#17213a" font-family="Georgia, 'Times New Roman', serif" font-size="13" font-style="italic" font-weight="600">- STUDIO LEGALE -</text>
+  <text x="120" y="132" text-anchor="middle" fill="#101827" font-family="Georgia, 'Times New Roman', serif" font-size="17" font-weight="700" letter-spacing="-.35">ZAZA – DELL’ALI</text>
+  <path d="M76 153h88" stroke="#d8dee8" stroke-width="1"/>
 </svg>
