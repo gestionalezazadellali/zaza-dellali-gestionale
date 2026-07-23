@@ -815,165 +815,224 @@ function InvoiceModal({
           onClose={onClose}
         />
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <Select
-            label="Cliente *"
-            value={form.client_contact_id}
-            onChange={(value) => onChange("client_contact_id", value)}
-            options={[
-              ["", "Seleziona cliente"],
-              ...clients.map((item) => [
-                String(item.id),
-                item.display_name,
-              ]),
-            ]}
-          />
+        <div className="mt-6 space-y-5">
+          <InvoiceFormSection
+            title="Dati della fattura"
+            description="Cliente, pratica, numero e date del documento."
+          >
+            <Select
+              label="Cliente *"
+              value={form.client_contact_id}
+              onChange={(value) => onChange("client_contact_id", value)}
+              options={[
+                ["", "Seleziona cliente"],
+                ...clients.map((item) => [
+                  String(item.id),
+                  item.display_name,
+                ]),
+              ]}
+            />
+            <Select
+              label="Pratica collegata"
+              value={form.case_id}
+              onChange={(value) => onChange("case_id", value)}
+              options={[
+                ["", "Nessuna pratica"],
+                ...cases.map((item) => [
+                  String(item.id),
+                  item.title ||
+                    item.claimant_name_raw ||
+                    `Pratica n. ${item.id}`,
+                ]),
+              ]}
+            />
+            <Input
+              label="Numero fattura *"
+              value={form.invoice_number}
+              onChange={(value) => onChange("invoice_number", value)}
+            />
+            <Select
+              label="Tipologia"
+              value={form.cost_destination}
+              onChange={(value) => onChange("cost_destination", value)}
+              options={[
+                ["compensi_cliente", "Compensi a carico del cliente"],
+                ["spese_distratte", "Spese distratte in favore dello studio"],
+                ["spese_ricorrente", "Spese liquidate al ricorrente"],
+                ["recupero_spese_legali", "Recupero spese legali"],
+                ["altro", "Altro"],
+              ]}
+            />
+            <Input
+              label="Data emissione"
+              type="date"
+              value={form.issue_date}
+              onChange={(value) => onChange("issue_date", value)}
+            />
+            <Input
+              label="Scadenza"
+              type="date"
+              value={form.due_date}
+              onChange={(value) => onChange("due_date", value)}
+            />
+          </InvoiceFormSection>
 
-          <Select
-            label="Pratica collegata"
-            value={form.case_id}
-            onChange={(value) => onChange("case_id", value)}
-            options={[
-              ["", "Nessuna pratica"],
-              ...cases.map((item) => [
-                String(item.id),
-                item.title ||
-                  item.claimant_name_raw ||
-                  `Pratica n. ${item.id}`,
-              ]),
-            ]}
-          />
+          <InvoiceFormSection
+            title="Professionista emittente"
+            description="Seleziona un utente dello studio oppure indica un altro avvocato."
+          >
+            <Select
+              label="Avvocato emittente"
+              value={form.issuing_lawyer_user_id}
+              onChange={(value) =>
+                onChange("issuing_lawyer_user_id", value)
+              }
+              options={[
+                ["", "Seleziona utente"],
+                ...profiles.map((profile) => [
+                  profile.id,
+                  getProfileName(profile),
+                ]),
+              ]}
+            />
+            <Input
+              label="Altro avvocato emittente"
+              value={form.issuing_lawyer_name}
+              onChange={(value) => onChange("issuing_lawyer_name", value)}
+            />
+          </InvoiceFormSection>
 
-          <Input
-            label="Numero fattura *"
-            value={form.invoice_number}
-            onChange={(value) => onChange("invoice_number", value)}
-          />
+          <InvoiceFormSection
+            title="Compensi e calcoli fiscali"
+            description="Gli importi in grigio sono calcolati automaticamente."
+          >
+            <Input
+              label="Onorari"
+              type="number"
+              value={form.taxable_amount}
+              onChange={(value) => onChange("taxable_amount", value)}
+            />
+            <Input
+              label="Spese generali 15%"
+              type="number"
+              value={form.general_expenses_amount}
+              readOnly
+            />
+            <Input
+              label="CPA 4%"
+              type="number"
+              value={form.cpa_amount}
+              readOnly
+            />
+            <Input
+              label="Spese esenti"
+              type="number"
+              value={form.exempt_expenses_amount}
+              onChange={(value) =>
+                onChange("exempt_expenses_amount", value)
+              }
+            />
 
-          <Select
-            label="Tipologia"
-            value={form.cost_destination}
-            onChange={(value) => onChange("cost_destination", value)}
-            options={[
-              ["compensi_cliente", "Compensi a carico del cliente"],
-              ["spese_distratte", "Spese distratte in favore dello studio"],
-              ["spese_ricorrente", "Spese liquidate al ricorrente"],
-              ["recupero_spese_legali", "Recupero spese legali"],
-              ["altro", "Altro"],
-            ]}
-          />
+            <TaxField
+              label="IVA"
+              optionLabel="Applica IVA 22%"
+              checked={form.vat_enabled}
+              value={form.tax_amount}
+              onChange={(value) => onChange("vat_enabled", value)}
+            />
+            <TaxField
+              label="Ritenuta d’acconto"
+              optionLabel="Applica ritenuta 20%"
+              checked={form.withholding_enabled}
+              value={form.withholding_amount}
+              onChange={(value) => onChange("withholding_enabled", value)}
+            />
 
-          <Input
-            label="Data emissione"
-            type="date"
-            value={form.issue_date}
-            onChange={(value) => onChange("issue_date", value)}
-          />
+            <div className="rounded-xl border-2 border-neutral-900 bg-neutral-50 p-4 sm:col-span-2">
+              <Input
+                label="Totale fattura"
+                type="number"
+                value={form.total_amount}
+                readOnly
+              />
+            </div>
+          </InvoiceFormSection>
 
-          <Input
-            label="Scadenza"
-            type="date"
-            value={form.due_date}
-            onChange={(value) => onChange("due_date", value)}
-          />
-
-          <Select
-            label="Avvocato emittente"
-            value={form.issuing_lawyer_user_id}
-            onChange={(value) =>
-              onChange("issuing_lawyer_user_id", value)
-            }
-            options={[
-              ["", "Seleziona utente"],
-              ...profiles.map((profile) => [
-                profile.id,
-                getProfileName(profile),
-              ]),
-            ]}
-          />
-
-          <Input
-            label="Altro avvocato emittente"
-            value={form.issuing_lawyer_name}
-            onChange={(value) => onChange("issuing_lawyer_name", value)}
-          />
-
-          <Input
-            label="Onorari"
-            type="number"
-            value={form.taxable_amount}
-            onChange={(value) => onChange("taxable_amount", value)}
-          />
-
-          <Input
-            label="Spese generali 15%"
-            type="number"
-            value={form.general_expenses_amount}
-            readOnly
-          />
-
-          <Input
-            label="CPA 4%"
-            type="number"
-            value={form.cpa_amount}
-            readOnly
-          />
-
-          <Checkbox
-            label="Applica IVA 22%"
-            checked={form.vat_enabled}
-            onChange={(value) => onChange("vat_enabled", value)}
-          />
-
-          <Input
-            label="IVA"
-            type="number"
-            value={form.tax_amount}
-            readOnly
-          />
-
-          <Input
-            label="Spese esenti"
-            type="number"
-            value={form.exempt_expenses_amount}
-            onChange={(value) => onChange("exempt_expenses_amount", value)}
-          />
-
-          <Checkbox
-            label="Applica ritenuta d’acconto 20%"
-            checked={form.withholding_enabled}
-            onChange={(value) => onChange("withholding_enabled", value)}
-          />
-
-          <Input
-            label="Ritenuta d’acconto"
-            type="number"
-            value={form.withholding_amount}
-            readOnly
-          />
-
-          <Input
-            label="Totale"
-            type="number"
-            value={form.total_amount}
-            readOnly
-          />
-
-          <TextArea
-            label="Descrizione"
-            value={form.description}
-            onChange={(value) => onChange("description", value)}
-          />
-
-          <TextArea
-            label="Note"
-            value={form.notes}
-            onChange={(value) => onChange("notes", value)}
-          />
+          <InvoiceFormSection
+            title="Descrizione e note"
+            description="Informazioni aggiuntive relative alla fattura."
+          >
+            <TextArea
+              label="Descrizione"
+              value={form.description}
+              onChange={(value) => onChange("description", value)}
+            />
+            <TextArea
+              label="Note"
+              value={form.notes}
+              onChange={(value) => onChange("notes", value)}
+            />
+          </InvoiceFormSection>
         </div>
 
         <ModalFooter saving={saving} message={message} onClose={onClose} />
       </form>
+    </div>
+  );
+}
+
+function InvoiceFormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-neutral-50/60 p-4 sm:p-5">
+      <h4 className="font-semibold text-neutral-900">{title}</h4>
+      <p className="mt-1 text-sm text-neutral-500">{description}</p>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">{children}</div>
+    </section>
+  );
+}
+
+function TaxField({
+  label,
+  optionLabel,
+  checked,
+  value,
+  onChange,
+}: {
+  label: string;
+  optionLabel: string;
+  checked: boolean;
+  value: string;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-neutral-300 bg-white p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-neutral-700">{label}</span>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(event) => onChange(event.target.checked)}
+            className="h-5 w-5 rounded border-neutral-300"
+          />
+          <span>{optionLabel}</span>
+        </label>
+      </div>
+      <input
+        type="number"
+        step="0.01"
+        value={value}
+        readOnly
+        className="w-full rounded-xl border border-neutral-300 bg-neutral-100 px-4 py-3 text-neutral-600"
+      />
     </div>
   );
 }
@@ -1128,28 +1187,6 @@ function Input({
           readOnly ? "bg-neutral-100 text-neutral-600" : ""
         }`}
       />
-    </label>
-  );
-}
-
-function Checkbox({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-}) {
-  return (
-    <label className="flex items-center gap-3 rounded-xl border border-neutral-300 px-4 py-3">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="h-5 w-5 rounded border-neutral-300"
-      />
-      <span className="text-sm">{label}</span>
     </label>
   );
 }

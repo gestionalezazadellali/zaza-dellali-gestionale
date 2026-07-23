@@ -46,6 +46,9 @@ export default function AdvancedDashboard({
 }) {
   const [updates, setUpdates] = useState<UpdateRecord[]>([]);
   const [message, setMessage] = useState("");
+  const [showMobileDeadlines, setShowMobileDeadlines] = useState(false);
+  const [showMobileHearings, setShowMobileHearings] = useState(false);
+  const [showUpdates, setShowUpdates] = useState(false);
 
   useEffect(() => {
     async function loadUpdates() {
@@ -180,7 +183,12 @@ export default function AdvancedDashboard({
       />
 
       <section className="grid gap-4 xl:grid-cols-2">
-        <Panel title={`Prossime scadenze (${upcomingDeadlines.length})`}>
+        <Panel
+          title="Prossime scadenze"
+          mobileCollapsible
+          open={showMobileDeadlines}
+          onToggle={() => setShowMobileDeadlines((current) => !current)}
+        >
           <EventList
             events={upcomingDeadlines}
             cases={cases}
@@ -189,7 +197,12 @@ export default function AdvancedDashboard({
           />
         </Panel>
 
-        <Panel title={`Prossime udienze (${upcomingHearings.length})`}>
+        <Panel
+          title="Prossime udienze"
+          mobileCollapsible
+          open={showMobileHearings}
+          onToggle={() => setShowMobileHearings((current) => !current)}
+        >
           <EventList
             events={upcomingHearings}
             cases={cases}
@@ -199,7 +212,12 @@ export default function AdvancedDashboard({
         </Panel>
       </section>
 
-      <Panel title="Ultimi aggiornamenti">
+      <Panel
+        title="Ultimi aggiornamenti"
+        collapsible
+        open={showUpdates}
+        onToggle={() => setShowUpdates((current) => !current)}
+      >
         {message && <p className="mb-3 text-sm text-amber-700">{message}</p>}
         {updates.length === 0 ? (
           <p className="text-sm text-neutral-500">
@@ -234,14 +252,43 @@ export default function AdvancedDashboard({
 function Panel({
   title,
   children,
+  collapsible = false,
+  mobileCollapsible = false,
+  open = true,
+  onToggle,
 }: {
   title: string;
   children: React.ReactNode;
+  collapsible?: boolean;
+  mobileCollapsible?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
 }) {
+  const canToggle = collapsible || mobileCollapsible;
+
   return (
     <article className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
-      <h3 className="font-semibold">{title}</h3>
-      <div className="mt-3">{children}</div>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-semibold">{title}</h3>
+        {canToggle && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className={`rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs ${
+              mobileCollapsible ? "md:hidden" : ""
+            }`}
+          >
+            {open ? "Nascondi" : "Mostra"}
+          </button>
+        )}
+      </div>
+      <div
+        className={`mt-3 ${
+          open ? "block" : mobileCollapsible ? "hidden md:block" : "hidden"
+        }`}
+      >
+        {children}
+      </div>
     </article>
   );
 }

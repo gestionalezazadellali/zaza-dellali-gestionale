@@ -148,6 +148,7 @@ export default function CaseDetail({
   const [showDeadlineForm, setShowDeadlineForm] = useState(false);
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showCompletedDeadlines, setShowCompletedDeadlines] = useState(false);
   const [editingEventId, setEditingEventId] = useState<number | null>(null);
   const [editingDeadlineId, setEditingDeadlineId] = useState<number | null>(
     null
@@ -980,7 +981,7 @@ export default function CaseDetail({
       />
 
       <EventPanel
-        title={`Udienze (${hearings.length})`}
+        title="Udienze"
         events={hearings}
         formatDate={formatDate}
         onAdjourn={openAdjournment}
@@ -991,6 +992,10 @@ export default function CaseDetail({
 
       <DeadlinePanel
         deadlines={deadlines}
+        showCompleted={showCompletedDeadlines}
+        onToggleCompletedVisibility={() =>
+          setShowCompletedDeadlines((current) => !current)
+        }
         formatDate={formatDate}
         onEdit={openDeadlineForEdit}
         onToggleCompleted={toggleDeadlineCompleted}
@@ -1237,6 +1242,8 @@ function NextDeadlinePanel({
 
 function DeadlinePanel({
   deadlines,
+  showCompleted,
+  onToggleCompletedVisibility,
   formatDate,
   onEdit,
   onToggleCompleted,
@@ -1244,77 +1251,114 @@ function DeadlinePanel({
   deletingEventId,
 }: {
   deadlines: CalendarEvent[];
+  showCompleted: boolean;
+  onToggleCompletedVisibility: () => void;
   formatDate: (value: string) => string;
   onEdit: (event: CalendarEvent) => void;
   onToggleCompleted: (event: CalendarEvent) => Promise<void>;
   onDelete: (event: CalendarEvent) => Promise<void>;
   deletingEventId: number | null;
 }) {
+  const openDeadlines = deadlines.filter(
+    (item) => item.status !== "completato"
+  );
+  const completedDeadlines = deadlines.filter(
+    (item) => item.status === "completato"
+  );
+
+  function renderDeadline(item: CalendarEvent) {
+    const completed = item.status === "completato";
+    const overdue =
+      !completed && new Date(item.start_at).getTime() < Date.now();
+
+    return (
+      <div
+        key={item.id}
+        className="rounded-xl border border-neutral-200 p-4"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium">{item.title}</p>
+              {completed && (
+                <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">
+                  Completata
+                </span>
+              )}
+              {overdue && (
+                <span className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-700">
+                  Scaduta
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-sm text-neutral-500">
+              {formatDate(item.start_at)}
+            </p>
+            {item.description && (
+              <p className="mt-2 text-sm text-neutral-600">
+                {item.description}
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void onToggleCompleted(item)}
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-xs"
+            >
+              {completed ? "Riapri" : "Completa"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onEdit(item)}
+              className="rounded-lg border border-neutral-300 px-3 py-2 text-xs"
+            >
+              Modifica
+            </button>
+            <button
+              type="button"
+              onClick={() => void onDelete(item)}
+              disabled={deletingEventId === item.id}
+              className="rounded-lg bg-red-600 px-3 py-2 text-xs text-white disabled:opacity-50"
+            >
+              {deletingEventId === item.id ? "Eliminazione..." : "Elimina"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <h4 className="text-lg font-semibold">
-        Scadenze della pratica ({deadlines.length})
-      </h4>
+      <h4 className="text-lg font-semibold">Scadenze della pratica</h4>
       <div className="mt-5 space-y-3">
-        {deadlines.length === 0 ? (
-          <p className="text-sm text-neutral-500">Nessuna scadenza presente.</p>
+        {openDeadlines.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            Nessuna scadenza aperta.
+          </p>
         ) : (
-          deadlines.map((item) => {
-            const completed = item.status === "completato";
-            return (
-              <div
-                key={item.id}
-                className="rounded-xl border border-neutral-200 p-4"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-medium">{item.title}</p>
-                      {completed && (
-                        <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">
-                          Completata
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm text-neutral-500">
-                      {formatDate(item.start_at)}
-                    </p>
-                    {item.description && (
-                      <p className="mt-2 text-sm text-neutral-600">
-                        {item.description}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void onToggleCompleted(item)}
-                      className="rounded-lg border border-neutral-300 px-3 py-2 text-xs"
-                    >
-                      {completed ? "Riapri" : "Completa"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onEdit(item)}
-                      className="rounded-lg border border-neutral-300 px-3 py-2 text-xs"
-                    >
-                      Modifica
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void onDelete(item)}
-                      disabled={deletingEventId === item.id}
-                      className="rounded-lg bg-red-600 px-3 py-2 text-xs text-white disabled:opacity-50"
-                    >
-                      {deletingEventId === item.id ? "Eliminazione..." : "Elimina"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+          openDeadlines.map(renderDeadline)
         )}
       </div>
+
+      {completedDeadlines.length > 0 && (
+        <div className="mt-5 border-t border-neutral-200 pt-5">
+          <button
+            type="button"
+            onClick={onToggleCompletedVisibility}
+            className="rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm"
+          >
+            {showCompleted ? "Nascondi completate" : "Mostra completate"}
+          </button>
+
+          {showCompleted && (
+            <div className="mt-4 space-y-3">
+              {completedDeadlines.map(renderDeadline)}
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 }
