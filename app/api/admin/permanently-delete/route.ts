@@ -77,12 +77,28 @@ export async function POST(request: NextRequest) {
     if (
       profileError ||
       !profile ||
-      profile.role !== "admin" ||
       !profile.active ||
       profile.deleted_at
     ) {
       return NextResponse.json(
-        { error: "Operazione consentita soltanto agli amministratori attivi." },
+        { error: "Account non autorizzato o disattivato." },
+        { status: 403 }
+      );
+    }
+
+    const { data: requestingPermissions } = await adminClient
+      .from("user_permissions")
+      .select("can_permanently_delete, can_manage_users")
+      .eq("user_id", requestingUser.id)
+      .maybeSingle();
+
+    const isAdmin = profile.role === "admin";
+    if (
+      !isAdmin &&
+      requestingPermissions?.can_permanently_delete !== true
+    ) {
+      return NextResponse.json(
+        { error: "Non disponi del permesso di eliminazione definitiva." },
         { status: 403 }
       );
     }
@@ -99,6 +115,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (resource === "user") {
+      if (!isAdmin && requestingPermissions?.can_manage_users !== true) {
+        return NextResponse.json(
+          { error: "Non disponi del permesso per eliminare utenti." },
+          { status: 403 }
+        );
+      }
       const userId = String(rawId ?? "");
 
       if (!userId || userId === requestingUser.id) {

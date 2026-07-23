@@ -38,6 +38,7 @@ import AdvancedDashboard from "./components/AdvancedDashboard";
 import GlobalSearchPage from "./components/GlobalSearchPage";
 import DeadlinesPage from "./components/DeadlinesPage";
 import HearingsPage from "./components/HearingsPage";
+import ProfileSettingsPage from "./components/ProfileSettingsPage";
 
 type DashboardCounts = {
   contacts: number;
@@ -75,8 +76,15 @@ const menuItems = [
   "Utenti",
   "Cestino",
   "Backup",
-  "Impostazioni",
+  "Profilo",
 ];
+
+type CurrentProfile = {
+  username: string | null;
+  display_name: string | null;
+  email: string | null;
+  role: string;
+};
 
 export default function Home() {
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -90,6 +98,11 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState("Dashboard");
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState("");
+  const [currentProfile, setCurrentProfile] =
+    useState<CurrentProfile | null>(null);
+  const [currentPermissions, setCurrentPermissions] = useState<
+    Record<string, boolean>
+  >({});
   const [errorMessage, setErrorMessage] = useState("");
 
   const [studioId, setStudioId] = useState("");
@@ -195,6 +208,8 @@ export default function Home() {
         setSelectedCounterpartyId(null);
         setEvents([]);
         setStudioId("");
+        setCurrentProfile(null);
+        setCurrentPermissions({});
       }
     });
 
@@ -399,6 +414,54 @@ export default function Home() {
     }
   }
 
+  async function loadCurrentProfileAccess() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+    if (userError || !user) throw userError || new Error("Utente non trovato.");
+
+    const [profileResult, permissionResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("studio_id, username, display_name, email, role, active, deleted_at")
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("user_permissions")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
+
+    if (profileResult.error) throw profileResult.error;
+    const profile = profileResult.data;
+    if (!profile || !profile.active || profile.deleted_at) {
+      throw new Error("Account disattivato.");
+    }
+
+    setStudioId(profile.studio_id ?? "");
+    setCurrentProfile(profile as CurrentProfile);
+    setUserEmail(
+      profile.display_name ||
+        profile.username ||
+        profile.email ||
+        user.email ||
+        ""
+    );
+
+    const permissionRecord = permissionResult.data ?? {};
+    setCurrentPermissions(
+      Object.fromEntries(
+        Object.entries(permissionRecord)
+          .filter(([key]) => key.startsWith("can_"))
+          .map(([key, value]) => [key, value === true])
+      )
+    );
+
+    return profile;
+  }
+
   const refreshAllDataEffect = useEffectEvent(refreshAllData);
 
   useEffect(() => {
@@ -503,19 +566,9 @@ export default function Home() {
         return;
       }
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("studio_id, active, deleted_at")
-        .eq("id", user.id)
-        .single();
-
-      if (profileError) {
-        setErrorMessage(profileError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!profile || !profile.active || profile.deleted_at) {
+      try {
+        await loadCurrentProfileAccess();
+      } catch (profileError) {
         setLoginMessage(
           "Account disattivato. Contatta l’amministratore dello studio."
         );
@@ -525,7 +578,6 @@ export default function Home() {
         return;
       }
 
-      setStudioId(profile?.studio_id ?? "");
       await refreshAllDataEffect();
       setLoading(false);
     }
@@ -538,14 +590,27 @@ export default function Home() {
     setLoginLoading(true);
     setLoginMessage("Accesso in corso...");
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email: loginEmail,
-      password: loginPassword,
+    const response = await fetch("/api/auth/username-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: loginEmail,
+        password: loginPassword,
+      }),
     });
 
-    setLoginMessage(
-      error ? `Accesso non riuscito: ${error.message}` : ""
-    );
+    const result = await response.json();
+    if (!response.ok) {
+      setLoginMessage(result.error || "Accesso non riuscito.");
+      setLoginLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.setSession({
+      access_token: result.access_token,
+      refresh_token: result.refresh_token,
+    });
+    setLoginMessage(error ? "Accesso non riuscito." : "");
     setLoginLoading(false);
   }
 
@@ -606,6 +671,46 @@ export default function Home() {
     setActiveSection("Pratiche");
   }
 
+  const isAdmin = currentProfile?.role === "admin";
+  const can = (permission: string) =>
+    isAdmin || currentPermissions[permission] === true;
+  const visibleMenuItems = menuItems.filter((item) => {
+    if (["Dashboard", "Profilo"].includes(item)) return true;
+    if (item === "Ricerca") {
+      return can("can_view_clients") || can("can_view_cases");
+    }
+    if (item === "Calendario" || item === "Udienze") {
+      return can("can_view_cases") || can("can_manage_hearings");
+    }
+    if (item === "Scadenze") {
+      return can("can_view_cases") || can("can_manage_deadlines");
+    }
+    if (item === "Clienti") return can("can_view_clients");
+    if (item === "Controparti") {
+      return can("can_view_cases") || can("can_manage_counterparties");
+    }
+    if (item === "Pratiche") return can("can_view_cases");
+    if (item === "Fatture") return can("can_view_billing");
+    if (item === "Documenti") return can("can_manage_documents");
+    if (item === "Utenti") return can("can_manage_users");
+    if (item === "Cestino") {
+      return (
+        can("can_restore_trash") ||
+        can("can_permanently_delete") ||
+        can("can_delete_cases") ||
+        can("can_delete_clients")
+      );
+    }
+    if (item === "Backup") {
+      return (
+        can("can_configure_backups") ||
+        can("can_run_backups") ||
+        can("can_restore_backups")
+      );
+    }
+    return false;
+  });
+
   if (!sessionChecked) {
     return (
       <main className="grid min-h-screen place-items-center bg-neutral-950 text-white">
@@ -641,7 +746,7 @@ export default function Home() {
           </div>
 
           <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
-            {menuItems.map((item) => (
+            {visibleMenuItems.map((item) => (
               <button
                 key={item}
                 type="button"
@@ -806,6 +911,14 @@ export default function Home() {
 
             {activeSection === "Utenti" && <UsersPage />}
 
+            {activeSection === "Profilo" && (
+              <ProfileSettingsPage
+                onProfileChanged={async () => {
+                  await loadCurrentProfileAccess();
+                }}
+              />
+            )}
+
             {activeSection === "Cestino" && (
               <TrashCasesPage
                 studioId={studioId}
@@ -867,6 +980,7 @@ export default function Home() {
               "Utenti",
               "Cestino",
               "Backup",
+              "Profilo",
             ].includes(activeSection) && <PlaceholderSection title={activeSection} />}
           </div>
         </section>
@@ -900,7 +1014,7 @@ export default function Home() {
             </div>
 
             <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-              {menuItems.map((item) => (
+              {visibleMenuItems.map((item) => (
                 <button
                   key={item}
                   type="button"
@@ -1116,10 +1230,10 @@ function LoginPage({
 
         <div className="mt-8 space-y-5">
           <input
-            type="email"
+            type="text"
             required
             value={email}
-            placeholder="Email"
+            placeholder="Username"
             onChange={(event) => onEmailChange(event.target.value)}
             className="w-full rounded-xl border border-neutral-700 bg-neutral-950 px-4 py-3"
           />

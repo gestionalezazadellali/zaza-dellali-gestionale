@@ -6,6 +6,7 @@ import { supabase } from "../../lib/supabase";
 type ProfileRecord = {
   id: string;
   studio_id: string;
+  username: string | null;
   first_name: string | null;
   last_name: string | null;
   display_name: string | null;
@@ -33,9 +34,23 @@ type PermissionRecord = {
   can_export_data: boolean;
   can_manage_users: boolean;
   can_manage_backups: boolean;
+  can_manage_counterparties: boolean;
+  can_manage_case_activities: boolean;
+  can_manage_payments: boolean;
+  can_delete_clients: boolean;
+  can_delete_cases: boolean;
+  can_delete_counterparties: boolean;
+  can_delete_events: boolean;
+  can_restore_trash: boolean;
+  can_permanently_delete: boolean;
+  can_configure_backups: boolean;
+  can_run_backups: boolean;
+  can_restore_backups: boolean;
+  can_view_audit_log: boolean;
 };
 
 type UserForm = {
+  username: string;
   first_name: string;
   last_name: string;
   display_name: string;
@@ -50,6 +65,8 @@ type UserForm = {
 };
 
 type InviteForm = {
+  username: string;
+  password: string;
   email: string;
   first_name: string;
   last_name: string;
@@ -58,11 +75,12 @@ type InviteForm = {
 };
 
 const emptyUserForm: UserForm = {
+  username: "",
   first_name: "",
   last_name: "",
   display_name: "",
   email: "",
-  role: "collaborator",
+  role: "lawyer",
   job_title: "",
   pec: "",
   phone: "",
@@ -72,11 +90,13 @@ const emptyUserForm: UserForm = {
 };
 
 const emptyInviteForm: InviteForm = {
+  username: "",
+  password: "",
   email: "",
   first_name: "",
   last_name: "",
   display_name: "",
-  role: "collaborator",
+  role: "lawyer",
 };
 
 const permissionLabels: Array<[keyof PermissionRecord, string]> = [
@@ -90,9 +110,90 @@ const permissionLabels: Array<[keyof PermissionRecord, string]> = [
   ["can_view_billing", "Visualizzare fatturazione"],
   ["can_manage_billing", "Gestire fatturazione"],
   ["can_export_data", "Esportare dati"],
-  ["can_manage_users", "Gestire utenti"],
-  ["can_manage_backups", "Gestire backup"],
+  ["can_manage_counterparties", "Gestire controparti"],
+  ["can_manage_case_activities", "Gestire Timeline e attività"],
+  ["can_manage_payments", "Registrare e modificare pagamenti"],
+  ["can_delete_clients", "Spostare clienti nel cestino"],
+  ["can_delete_cases", "Spostare pratiche nel cestino"],
+  ["can_delete_counterparties", "Spostare controparti nel cestino"],
+  ["can_delete_events", "Spostare udienze e scadenze nel cestino"],
+  ["can_restore_trash", "Ripristinare elementi dal cestino"],
+  ["can_permanently_delete", "Eliminare definitivamente dal cestino"],
+  ["can_configure_backups", "Configurare i backup"],
+  ["can_run_backups", "Eseguire i backup"],
+  ["can_restore_backups", "Ripristinare un backup"],
+  ["can_view_audit_log", "Vedere il registro completo delle modifiche"],
 ];
+
+const emptyPermissions: PermissionRecord = {
+  user_id: "",
+  can_view_clients: true,
+  can_edit_clients: false,
+  can_view_cases: true,
+  can_edit_cases: false,
+  can_manage_deadlines: false,
+  can_manage_hearings: false,
+  can_manage_documents: false,
+  can_view_billing: false,
+  can_manage_billing: false,
+  can_export_data: false,
+  can_manage_users: false,
+  can_manage_backups: false,
+  can_manage_counterparties: false,
+  can_manage_case_activities: false,
+  can_manage_payments: false,
+  can_delete_clients: false,
+  can_delete_cases: false,
+  can_delete_counterparties: false,
+  can_delete_events: false,
+  can_restore_trash: false,
+  can_permanently_delete: false,
+  can_configure_backups: false,
+  can_run_backups: false,
+  can_restore_backups: false,
+  can_view_audit_log: false,
+};
+
+function permissionsForRole(role: string): PermissionRecord {
+  const base = { ...emptyPermissions };
+  if (role === "lawyer") {
+    return {
+      ...base,
+      can_edit_clients: true,
+      can_edit_cases: true,
+      can_manage_counterparties: true,
+      can_manage_deadlines: true,
+      can_manage_hearings: true,
+      can_manage_case_activities: true,
+      can_view_billing: true,
+    };
+  }
+  if (role === "secretary") {
+    return {
+      ...base,
+      can_edit_clients: true,
+      can_edit_cases: true,
+      can_manage_counterparties: true,
+      can_manage_deadlines: true,
+      can_manage_hearings: true,
+      can_manage_case_activities: true,
+      can_view_billing: true,
+      can_manage_billing: true,
+      can_manage_payments: true,
+    };
+  }
+  if (role === "trainee") {
+    return {
+      ...base,
+      can_edit_clients: true,
+      can_edit_cases: true,
+      can_manage_deadlines: true,
+      can_manage_hearings: true,
+      can_manage_case_activities: true,
+    };
+  }
+  return base;
+}
 
 export default function UsersPage() {
   const [profiles, setProfiles] = useState<ProfileRecord[]>([]);
@@ -103,6 +204,8 @@ export default function UsersPage() {
     useState<PermissionRecord | null>(null);
   const [inviteForm, setInviteForm] =
     useState<InviteForm>(emptyInviteForm);
+  const [invitePermissions, setInvitePermissions] =
+    useState<PermissionRecord>(permissionsForRole("lawyer"));
   const [showInvite, setShowInvite] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -120,7 +223,7 @@ export default function UsersPage() {
       supabase
         .from("profiles")
         .select(
-          "id, studio_id, first_name, last_name, display_name, role, job_title, email, pec, phone, fiscal_code, address, active"
+          "id, studio_id, username, first_name, last_name, display_name, role, job_title, email, pec, phone, fiscal_code, address, active"
         )
         .is("deleted_at", null)
         .order("display_name", { ascending: true }),
@@ -128,7 +231,7 @@ export default function UsersPage() {
       supabase
         .from("user_permissions")
         .select(
-          "user_id, can_view_clients, can_edit_clients, can_view_cases, can_edit_cases, can_manage_deadlines, can_manage_hearings, can_manage_documents, can_view_billing, can_manage_billing, can_export_data, can_manage_users, can_manage_backups"
+          "user_id, can_view_clients, can_edit_clients, can_view_cases, can_edit_cases, can_manage_deadlines, can_manage_hearings, can_manage_documents, can_view_billing, can_manage_billing, can_export_data, can_manage_users, can_manage_backups, can_manage_counterparties, can_manage_case_activities, can_manage_payments, can_delete_clients, can_delete_cases, can_delete_counterparties, can_delete_events, can_restore_trash, can_permanently_delete, can_configure_backups, can_run_backups, can_restore_backups, can_view_audit_log"
         ),
     ]);
 
@@ -162,6 +265,7 @@ export default function UsersPage() {
 
     setSelectedUser(user);
     setUserForm({
+      username: user.username ?? "",
       first_name: user.first_name ?? "",
       last_name: user.last_name ?? "",
       display_name: user.display_name ?? "",
@@ -176,21 +280,7 @@ export default function UsersPage() {
     });
 
     setPermissionForm(
-      permission ?? {
-        user_id: user.id,
-        can_view_clients: true,
-        can_edit_clients: false,
-        can_view_cases: true,
-        can_edit_cases: false,
-        can_manage_deadlines: false,
-        can_manage_hearings: false,
-        can_manage_documents: false,
-        can_view_billing: false,
-        can_manage_billing: false,
-        can_export_data: false,
-        can_manage_users: false,
-        can_manage_backups: false,
-      }
+      permission ?? { ...emptyPermissions, user_id: user.id }
     );
 
     setMessage("");
@@ -203,6 +293,19 @@ export default function UsersPage() {
 
   function updateInviteForm(field: keyof InviteForm, value: string) {
     setInviteForm((current) => ({ ...current, [field]: value }));
+    if (field === "role") {
+      setInvitePermissions(permissionsForRole(value));
+    }
+  }
+
+  function updateInvitePermission(
+    field: keyof PermissionRecord,
+    value: boolean
+  ) {
+    setInvitePermissions((current) => ({
+      ...current,
+      [field]: value,
+    }));
   }
 
   function updatePermission(
@@ -217,8 +320,12 @@ export default function UsersPage() {
   async function inviteUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!inviteForm.email.trim()) {
-      setMessage("Inserisci l’email del nuovo utente.");
+    if (
+      !inviteForm.username.trim() ||
+      !inviteForm.password ||
+      !inviteForm.display_name.trim()
+    ) {
+      setMessage("Inserisci username, password e nickname.");
       return;
     }
 
@@ -241,7 +348,10 @@ export default function UsersPage() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify(inviteForm),
+      body: JSON.stringify({
+        ...inviteForm,
+        permissions: invitePermissions,
+      }),
     });
 
     const result = await response.json();
@@ -253,8 +363,9 @@ export default function UsersPage() {
     }
 
     setInviteForm(emptyInviteForm);
+    setInvitePermissions(permissionsForRole("lawyer"));
     setShowInvite(false);
-    setMessage("Invito inviato correttamente.");
+    setMessage("Utente creato correttamente.");
 
     setTimeout(() => {
       loadUsers();
@@ -311,6 +422,19 @@ export default function UsersPage() {
       can_export_data: permissionForm.can_export_data,
       can_manage_users: permissionForm.can_manage_users,
       can_manage_backups: permissionForm.can_manage_backups,
+      can_manage_counterparties: permissionForm.can_manage_counterparties,
+      can_manage_case_activities: permissionForm.can_manage_case_activities,
+      can_manage_payments: permissionForm.can_manage_payments,
+      can_delete_clients: permissionForm.can_delete_clients,
+      can_delete_cases: permissionForm.can_delete_cases,
+      can_delete_counterparties: permissionForm.can_delete_counterparties,
+      can_delete_events: permissionForm.can_delete_events,
+      can_restore_trash: permissionForm.can_restore_trash,
+      can_permanently_delete: permissionForm.can_permanently_delete,
+      can_configure_backups: permissionForm.can_configure_backups,
+      can_run_backups: permissionForm.can_run_backups,
+      can_restore_backups: permissionForm.can_restore_backups,
+      can_view_audit_log: permissionForm.can_view_audit_log,
     };
 
     const permissionResult = await supabase
@@ -408,6 +532,7 @@ export default function UsersPage() {
             type="button"
             onClick={() => {
               setInviteForm(emptyInviteForm);
+              setInvitePermissions(permissionsForRole("lawyer"));
               setMessage("");
               setShowInvite(true);
             }}
@@ -450,7 +575,10 @@ export default function UsersPage() {
                   </div>
 
                   <p className="mt-2 text-sm text-neutral-500">
-                    {user.email || "Email non indicata"}
+                    Username: {user.username || "non configurato"}
+                  </p>
+                  <p className="mt-1 text-sm text-neutral-500">
+                    {user.email || "Email di contatto non indicata"}
                   </p>
 
                   <p className="mt-1 text-sm text-neutral-500">
@@ -493,13 +621,16 @@ export default function UsersPage() {
       {showInvite && (
         <InviteModal
           form={inviteForm}
+          permissions={invitePermissions}
           saving={saving}
           message={message}
           onChange={updateInviteForm}
+          onPermissionChange={updateInvitePermission}
           onSubmit={inviteUser}
           onClose={() => {
             setShowInvite(false);
             setInviteForm(emptyInviteForm);
+            setInvitePermissions(permissionsForRole("lawyer"));
             setMessage("");
           }}
         />
@@ -528,28 +659,57 @@ export default function UsersPage() {
 
 function InviteModal({
   form,
+  permissions,
   saving,
   message,
   onChange,
+  onPermissionChange,
   onSubmit,
   onClose,
 }: {
   form: InviteForm;
+  permissions: PermissionRecord;
   saving: boolean;
   message: string;
   onChange: (field: keyof InviteForm, value: string) => void;
+  onPermissionChange: (
+    field: keyof PermissionRecord,
+    value: boolean
+  ) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 px-4 py-8">
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"
+        className="mx-auto w-full max-w-5xl rounded-2xl bg-white p-6 shadow-2xl"
       >
-        <ModalHeader title="Invita nuovo utente" onClose={onClose} />
+        <ModalHeader title="Crea nuovo utente" onClose={onClose} />
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Username *"
+            value={form.username}
+            onChange={(value) => onChange("username", value)}
+          />
+          <Input
+            label="Password iniziale *"
+            type="password"
+            value={form.password}
+            onChange={(value) => onChange("password", value)}
+          />
+          <Input
+            label="Nickname *"
+            value={form.display_name}
+            onChange={(value) => onChange("display_name", value)}
+          />
+          <Input
+            label="Email di contatto"
+            type="email"
+            value={form.email}
+            onChange={(value) => onChange("email", value)}
+          />
           <Input
             label="Nome"
             value={form.first_name}
@@ -560,34 +720,42 @@ function InviteModal({
             value={form.last_name}
             onChange={(value) => onChange("last_name", value)}
           />
-          <Input
-            label="Nome visualizzato"
-            value={form.display_name}
-            onChange={(value) => onChange("display_name", value)}
-          />
-          <Input
-            label="Email *"
-            type="email"
-            value={form.email}
-            onChange={(value) => onChange("email", value)}
-          />
           <Select
-            label="Ruolo iniziale"
+            label="Ruolo"
             value={form.role}
             onChange={(value) => onChange("role", value)}
             options={[
-              ["admin", "Amministratore"],
               ["lawyer", "Avvocato"],
               ["secretary", "Segreteria"],
-              ["collaborator", "Collaboratore"],
-              ["custom", "Personalizzato"],
+              ["trainee", "Praticante"],
+              ["external_collaborator", "Collaboratore esterno"],
             ]}
           />
         </div>
 
-        <p className="mt-5 text-sm text-neutral-500">
-          L’utente riceverà un’email per impostare la propria password.
-        </p>
+        <div className="mt-7">
+          <h4 className="font-semibold">Autorizzazioni iniziali</h4>
+          <p className="mt-1 text-sm text-neutral-500">
+            Il ruolo propone una configurazione che puoi personalizzare.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {permissionLabels.map(([key, label]) => (
+              <label
+                key={key}
+                className="flex items-center gap-3 rounded-xl border border-neutral-300 px-4 py-3 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(permissions[key])}
+                  onChange={(event) =>
+                    onPermissionChange(key, event.target.checked)
+                  }
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
 
         <ModalFooter saving={saving} message={message} onClose={onClose} />
       </form>
@@ -627,6 +795,12 @@ function EditUserModal({
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Input
+            label="Username"
+            value={form.username}
+            disabled
+            onChange={() => undefined}
+          />
+          <Input
             label="Nome"
             value={form.first_name}
             onChange={(value) => onUserChange("first_name", value)}
@@ -637,7 +811,7 @@ function EditUserModal({
             onChange={(value) => onUserChange("last_name", value)}
           />
           <Input
-            label="Nome visualizzato"
+            label="Nickname"
             value={form.display_name}
             onChange={(value) => onUserChange("display_name", value)}
           />
@@ -652,11 +826,10 @@ function EditUserModal({
             value={form.role}
             onChange={(value) => onUserChange("role", value)}
             options={[
-              ["admin", "Amministratore"],
               ["lawyer", "Avvocato"],
               ["secretary", "Segreteria"],
-              ["collaborator", "Collaboratore"],
-              ["custom", "Personalizzato"],
+              ["trainee", "Praticante"],
+              ["external_collaborator", "Collaboratore esterno"],
             ]}
           />
           <Input

@@ -68,28 +68,46 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const email = String(body.email ?? "").trim().toLowerCase();
+    const username = normalizeUsername(String(body.username ?? ""));
+    const password = String(body.password ?? "");
+    const contactEmail = String(body.email ?? "").trim().toLowerCase();
     const firstName = String(body.first_name ?? "").trim();
     const lastName = String(body.last_name ?? "").trim();
-    const role = String(body.role ?? "collaborator").trim();
+    const role = String(body.role ?? "external_collaborator").trim();
     const displayName =
       String(body.display_name ?? "").trim() ||
       `${firstName} ${lastName}`.trim() ||
-      email;
+      username;
 
-    if (!email) {
+    if (!username || !/^[a-z0-9][a-z0-9._-]{2,39}$/.test(username)) {
       return NextResponse.json(
-        { error: "L'indirizzo email è obbligatorio." },
+        {
+          error:
+            "Lo username deve contenere da 3 a 40 caratteri: lettere, numeri, punto, trattino o underscore.",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json(
+        { error: "La password deve contenere almeno 8 caratteri." },
+        { status: 400 }
+      );
+    }
+
+    if (!displayName) {
+      return NextResponse.json(
+        { error: "Il nickname è obbligatorio." },
         { status: 400 }
       );
     }
 
     const allowedRoles = [
-      "admin",
       "lawyer",
       "secretary",
-      "collaborator",
-      "custom",
+      "trainee",
+      "external_collaborator",
     ];
 
     if (!allowedRoles.includes(role)) {
@@ -99,13 +117,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const appUrl =
-      process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
+    const authEmail = `${username}@auth.zazadellali.local`;
+    const permissions =
+      body.permissions && typeof body.permissions === "object"
+        ? body.permissions
+        : {};
 
-    const { data: invitation, error: invitationError } =
-      await adminClient.auth.admin.inviteUserByEmail(email, {
-        redirectTo: appUrl,
-        data: {
+    const { data: createdUser, error: creationError } =
+      await adminClient.auth.admin.createUser({
+        email: authEmail,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          username,
+          contact_email: contactEmail || null,
           first_name: firstName,
           last_name: lastName,
           display_name: displayName,
@@ -114,33 +139,58 @@ export async function POST(request: NextRequest) {
         },
       });
 
-    if (invitationError) {
+    if (creationError) {
       return NextResponse.json(
-        { error: invitationError.message },
+        { error: creationError.message },
         { status: 400 }
       );
     }
 
-    if (invitation.user) {
+    if (createdUser.user) {
       const { error: updateError } = await adminClient
         .from("profiles")
         .update({
           studio_id: requestingProfile.studio_id,
+          username,
           first_name: firstName || null,
           last_name: lastName || null,
           display_name: displayName,
-          email,
+          email: contactEmail || null,
           role,
           active: true,
         })
-        .eq("id", invitation.user.id);
+        .eq("id", createdUser.user.id);
 
       if (updateError) {
+        await adminClient.auth.admin.deleteUser(createdUser.user.id);
         return NextResponse.json(
           {
             error:
-              "Invito inviato, ma il profilo non è stato aggiornato: " +
+              "L’utente non è stato creato perché il profilo non è stato aggiornato: " +
               updateError.message,
+          },
+          { status: 500 }
+        );
+      }
+
+      const permissionPayload = buildPermissionPayload(permissions);
+      const { error: permissionError } = await adminClient
+        .from("user_permissions")
+        .upsert(
+          {
+            user_id: createdUser.user.id,
+            ...permissionPayload,
+          },
+          { onConflict: "user_id" }
+        );
+
+      if (permissionError) {
+        await adminClient.auth.admin.deleteUser(createdUser.user.id);
+        return NextResponse.json(
+          {
+            error:
+              "L’utente non è stato creato perché i permessi non sono stati salvati: " +
+              permissionError.message,
           },
           { status: 500 }
         );
@@ -149,8 +199,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Invito inviato correttamente.",
-      user_id: invitation.user?.id ?? null,
+      message: "Utente creato correttamente.",
+      user_id: createdUser.user?.id ?? null,
+      username,
     });
   } catch (error) {
     return NextResponse.json(
@@ -163,4 +214,45 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function normalizeUsername(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, ".");
+}
+
+const permissionNames = [
+  "can_view_clients",
+  "can_edit_clients",
+  "can_view_cases",
+  "can_edit_cases",
+  "can_manage_deadlines",
+  "can_manage_hearings",
+  "can_manage_documents",
+  "can_view_billing",
+  "can_manage_billing",
+  "can_export_data",
+  "can_manage_users",
+  "can_manage_backups",
+  "can_manage_counterparties",
+  "can_manage_case_activities",
+  "can_manage_payments",
+  "can_delete_clients",
+  "can_delete_cases",
+  "can_delete_counterparties",
+  "can_delete_events",
+  "can_restore_trash",
+  "can_permanently_delete",
+  "can_configure_backups",
+  "can_run_backups",
+  "can_restore_backups",
+  "can_view_audit_log",
+] as const;
+
+function buildPermissionPayload(value: Record<string, unknown>) {
+  return Object.fromEntries(
+    permissionNames.map((permission) => [
+      permission,
+      value[permission] === true,
+    ])
+  );
 }
