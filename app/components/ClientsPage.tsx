@@ -76,6 +76,7 @@ export default function ClientsPage({
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingClientId, setDeletingClientId] = useState<number | null>(null);
+  const [selectedClientIds, setSelectedClientIds] = useState<number[]>([]);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -378,6 +379,47 @@ export default function ClientsPage({
     }
   }
 
+  function toggleClientSelection(id: number) {
+    setSelectedClientIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
+  }
+
+  async function deleteSelectedClients() {
+    if (selectedClientIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Spostare nel cestino i ${selectedClientIds.length} clienti selezionati? Le pratiche collegate resteranno esistenti.`
+      )
+    )
+      return;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setMessage("Errore: utente non autenticato.");
+      return;
+    }
+    const { error } = await supabase
+      .from("contacts")
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: user.id,
+        delete_reason: "Eliminazione multipla dalla sezione Clienti",
+      })
+      .eq("studio_id", studioId)
+      .in("id", selectedClientIds);
+    if (error) {
+      setMessage(`Errore: ${error.message}`);
+      return;
+    }
+    setSelectedClientIds([]);
+    await onClientsChanged();
+    setMessage("Clienti selezionati spostati nel cestino.");
+  }
+
   const clientFormModal = showForm ? (
     <ClientFormModal
       title={editingClient ? "Modifica anagrafica" : "Nuovo cliente"}
@@ -454,6 +496,25 @@ export default function ClientsPage({
         )}
       </div>
 
+      {selectedClientIds.length > 0 && (
+        <div className="flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white p-3">
+          <button
+            type="button"
+            onClick={deleteSelectedClients}
+            className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white"
+          >
+            Elimina selezionati ({selectedClientIds.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedClientIds([])}
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+          >
+            Deseleziona
+          </button>
+        </div>
+      )}
+
       <section className="grid gap-4">
         {filteredClients.map((client) => {
           const linkedCases = cases.filter(
@@ -461,12 +522,22 @@ export default function ClientsPage({
           ).length;
 
           return (
-            <button
+            <article
               key={client.id}
-              type="button"
-              onClick={() => setSelectedClient(client)}
-              className="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-sm transition hover:border-neutral-400 hover:bg-neutral-50"
+              className="flex gap-4 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-neutral-400 hover:bg-neutral-50"
             >
+              <input
+                type="checkbox"
+                checked={selectedClientIds.includes(client.id)}
+                onChange={() => toggleClientSelection(client.id)}
+                aria-label={`Seleziona ${client.display_name}`}
+                className="mt-1 h-5 w-5 rounded border-neutral-300"
+              />
+              <button
+                type="button"
+                onClick={() => setSelectedClient(client)}
+                className="min-w-0 flex-1 text-left"
+              >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -505,7 +576,8 @@ export default function ClientsPage({
                   </p>
                 </div>
               </div>
-            </button>
+              </button>
+            </article>
           );
         })}
       </section>

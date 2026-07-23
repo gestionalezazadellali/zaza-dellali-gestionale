@@ -51,6 +51,7 @@ export default function CounterpartiesPage({
   const [loadingCases, setLoadingCases] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [message, setMessage] = useState("");
 
   const loadCounterparties = useCallback(
@@ -162,7 +163,12 @@ export default function CounterpartiesPage({
     setMessage("");
 
     try {
-      const input: CounterpartyInput = form;
+      const input: CounterpartyInput = {
+        ...form,
+        counterparty_type:
+          editingCounterparty?.counterparty_type || "da_classificare",
+        needs_review: editingCounterparty?.needs_review ?? false,
+      };
       const saved = editingCounterparty
         ? await updateCounterparty(studioId, editingCounterparty.id, input)
         : await createCounterparty(studioId, input);
@@ -211,6 +217,42 @@ export default function CounterpartiesPage({
       setMessage("Controparte spostata nel cestino.");
     } catch (error) {
       setMessage(formatError(error, "Errore durante l’eliminazione."));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function toggleSelection(id: number) {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
+  }
+
+  async function deleteSelected() {
+    if (selectedIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Spostare nel cestino le ${selectedIds.length} controparti selezionate? I collegamenti storici con le pratiche resteranno disponibili.`
+      )
+    )
+      return;
+    setDeleting(true);
+    setMessage("");
+    try {
+      for (const id of selectedIds) {
+        await softDeleteCounterparty(
+          studioId,
+          id,
+          "Eliminazione multipla dalla sezione Controparti"
+        );
+      }
+      setSelectedIds([]);
+      await Promise.all([onChanged(), loadCounterparties(search)]);
+      setMessage("Controparti selezionate spostate nel cestino.");
+    } catch (error) {
+      setMessage(formatError(error, "Errore durante l’eliminazione multipla."));
     } finally {
       setDeleting(false);
     }
@@ -293,6 +335,26 @@ export default function CounterpartiesPage({
         {message && <p className="text-sm text-neutral-600">{message}</p>}
       </div>
 
+      {selectedIds.length > 0 && (
+        <div className="flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white p-3">
+          <button
+            type="button"
+            onClick={deleteSelected}
+            disabled={deleting}
+            className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+          >
+            Elimina selezionate ({selectedIds.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds([])}
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+          >
+            Deseleziona
+          </button>
+        </div>
+      )}
+
       {loading && counterparties.length === 0 ? (
         <section className="rounded-2xl border border-neutral-200 bg-white p-8 text-sm text-neutral-500 shadow-sm">
           Caricamento controparti...
@@ -304,12 +366,22 @@ export default function CounterpartiesPage({
       ) : (
         <section className="grid gap-4">
           {counterparties.map((item) => (
-            <button
+            <article
               key={item.id}
-              type="button"
-              onClick={() => void openDetail(item)}
-              className="rounded-2xl border border-neutral-200 bg-white p-5 text-left shadow-sm transition hover:border-neutral-400 hover:bg-neutral-50"
+              className="flex gap-4 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm transition hover:border-neutral-400 hover:bg-neutral-50"
             >
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(item.id)}
+                onChange={() => toggleSelection(item.id)}
+                aria-label={`Seleziona ${item.display_name}`}
+                className="mt-1 h-5 w-5 rounded border-neutral-300"
+              />
+              <button
+                type="button"
+                onClick={() => void openDetail(item)}
+                className="min-w-0 flex-1 text-left"
+              >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -340,7 +412,8 @@ export default function CounterpartiesPage({
                   Apri scheda
                 </span>
               </div>
-            </button>
+              </button>
+            </article>
           ))}
         </section>
       )}

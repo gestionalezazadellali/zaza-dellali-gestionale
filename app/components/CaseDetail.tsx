@@ -907,7 +907,15 @@ export default function CaseDetail({
         <InfoCard label="Tipo" value={caseRecord.case_type} />
         <InfoCard label="Sezione" value={caseRecord.section} />
         <InfoCard label="Giudice" value={caseRecord.judge_name} />
-        <InfoCard label="Stato" value={caseRecord.status} />
+        <InfoCard
+          label="Stato"
+          value={
+            caseRecord.status === "archiviata" ||
+            caseRecord.status === "archiviato"
+              ? `Archiviata · faldone ${caseRecord.archive_box_number || "n.d."}/${caseRecord.archive_year || "n.d."}`
+              : "In corso"
+          }
+        />
       </section>
 
       <NextDeadlinePanel

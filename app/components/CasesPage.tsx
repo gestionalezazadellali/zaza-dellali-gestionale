@@ -62,6 +62,8 @@ export type CaseRecord = {
   responsible_user_id: string | null;
   opening_date: string | null;
   closing_date: string | null;
+  archive_box_number: string | null;
+  archive_year: number | null;
   description: string | null;
   notes: string | null;
   needs_review: boolean;
@@ -107,6 +109,8 @@ type CaseForm = {
   rg_number: string;
   judge_name: string;
   status: string;
+  archive_box_number: string;
+  archive_year: string;
   opening_date: string;
   description: string;
   notes: string;
@@ -122,7 +126,9 @@ const emptyForm: CaseForm = {
   section: "Diritto del Lavoro",
   rg_number: "",
   judge_name: "",
-  status: "nuova",
+  status: "in_corso",
+  archive_box_number: "",
+  archive_year: "",
   opening_date: "",
   description: "",
   notes: "",
@@ -140,15 +146,8 @@ const caseTypes = [
 ];
 
 const caseStatuses = [
-  ["nuova", "Nuova"],
-  ["documenti_da_ricevere", "Documenti da ricevere"],
-  ["diffida", "Diffida"],
-  ["ricorso_in_preparazione", "Ricorso in preparazione"],
-  ["depositato", "Depositato"],
-  ["in_attesa_udienza", "In attesa di udienza"],
-  ["definito", "Definito"],
-  ["archiviato", "Archiviato"],
-  ["importata_da_calendario", "Importata dal calendario"],
+  ["in_corso", "In corso"],
+  ["archiviata", "Archiviata"],
 ];
 
 export default function CasesPage({
@@ -186,6 +185,7 @@ export default function CasesPage({
   }));
   const [saving, setSaving] = useState(false);
   const [deletingCaseId, setDeletingCaseId] = useState<number | null>(null);
+  const [selectedCaseIds, setSelectedCaseIds] = useState<number[]>([]);
   const [message, setMessage] = useState("");
   const [additionalCounterparties, setAdditionalCounterparties] = useState<
     CounterpartyOption[]
@@ -294,7 +294,11 @@ export default function CasesPage({
       section: item.section ?? "",
       rg_number: item.rg_number ?? "",
       judge_name: item.judge_name ?? "",
-      status: item.status ?? "nuova",
+      status: item.status === "archiviata" || item.status === "archiviato"
+        ? "archiviata"
+        : "in_corso",
+      archive_box_number: item.archive_box_number ?? "",
+      archive_year: item.archive_year ? String(item.archive_year) : "",
       opening_date: item.opening_date ?? "",
       description: item.description ?? "",
       notes: item.notes ?? "",
@@ -309,6 +313,17 @@ export default function CasesPage({
 
     if (!form.client_contact_id) {
       setMessage("Seleziona il cliente.");
+      return;
+    }
+
+    if (
+      form.status === "archiviata" &&
+      (!form.archive_box_number.trim() ||
+        !form.archive_year ||
+        Number(form.archive_year) < 1900 ||
+        Number(form.archive_year) > 2200)
+    ) {
+      setMessage("Per archiviare la pratica indica numero e anno del faldone.");
       return;
     }
 
@@ -342,6 +357,18 @@ export default function CasesPage({
         rg_number: form.rg_number.trim() || null,
         judge_name: form.judge_name.trim() || null,
         status: form.status,
+        archive_box_number:
+          form.status === "archiviata"
+            ? form.archive_box_number.trim() || null
+            : null,
+        archive_year:
+          form.status === "archiviata" && form.archive_year
+            ? Number(form.archive_year)
+            : null,
+        closing_date:
+          form.status === "archiviata"
+            ? editingCase?.closing_date || new Date().toISOString().slice(0, 10)
+            : null,
         opening_date: form.opening_date || null,
         description: form.description.trim() || null,
         notes: form.notes.trim() || null,
@@ -486,6 +513,47 @@ export default function CasesPage({
     }
   }
 
+  function toggleCaseSelection(id: number) {
+    setSelectedCaseIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
+  }
+
+  async function deleteSelectedCases() {
+    if (selectedCaseIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Spostare nel cestino le ${selectedCaseIds.length} pratiche selezionate?`
+      )
+    )
+      return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setMessage("Utente non autenticato.");
+      return;
+    }
+    const { error } = await supabase
+      .from("cases")
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: user.id,
+        delete_reason: "Eliminazione multipla dalla sezione Pratiche",
+      })
+      .in("id", selectedCaseIds);
+    if (error) {
+      setMessage(`Errore: ${error.message}`);
+      return;
+    }
+    setSelectedCaseIds([]);
+    await onRefresh();
+    setMessage("Pratiche selezionate spostate nel cestino.");
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -530,6 +598,25 @@ export default function CasesPage({
         {message && <p className="text-sm text-neutral-600">{message}</p>}
       </div>
 
+      {selectedCaseIds.length > 0 && (
+        <div className="flex flex-wrap gap-2 rounded-xl border border-neutral-200 bg-white p-3">
+          <button
+            type="button"
+            onClick={deleteSelectedCases}
+            className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white"
+          >
+            Elimina selezionate ({selectedCaseIds.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedCaseIds([])}
+            className="rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+          >
+            Deseleziona
+          </button>
+        </div>
+      )}
+
       <section className="grid gap-4">
         {filteredCases.map((item) => (
           <article
@@ -537,6 +624,13 @@ export default function CasesPage({
             className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
           >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <input
+                type="checkbox"
+                checked={selectedCaseIds.includes(item.id)}
+                onChange={() => toggleCaseSelection(item.id)}
+                aria-label={`Seleziona pratica ${item.id}`}
+                className="mt-1 h-5 w-5 rounded border-neutral-300"
+              />
               <button
                 type="button"
                 onClick={() => onOpenCase(item)}
@@ -725,11 +819,29 @@ function CaseFormModal({
           />
 
           <SelectField
-            label="Stato"
+            label="Stato amministrativo"
             value={form.status}
             onChange={(value) => onChange("status", value)}
             options={caseStatuses}
           />
+
+          {form.status === "archiviata" && (
+            <>
+              <InputField
+                label="Numero faldone *"
+                value={form.archive_box_number}
+                onChange={(value) => onChange("archive_box_number", value)}
+                placeholder="Es. 24"
+              />
+              <InputField
+                label="Anno faldone *"
+                type="number"
+                value={form.archive_year}
+                onChange={(value) => onChange("archive_year", value)}
+                placeholder={String(new Date().getFullYear())}
+              />
+            </>
+          )}
 
           <InputField
             label="Ufficio giudiziario"

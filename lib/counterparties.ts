@@ -83,6 +83,9 @@ export type CaseSaveInput = {
   rg_number: string | null;
   judge_name: string | null;
   status: string;
+  archive_box_number?: string | null;
+  archive_year?: number | null;
+  closing_date?: string | null;
   opening_date: string | null;
   description: string | null;
   notes: string | null;
@@ -553,6 +556,22 @@ export async function saveCaseWithCounterparties({
 
   const savedCaseId = Number(data);
   validateId("pratica salvata", savedCaseId);
+
+  const { error: archiveError } = await supabase
+    .from("cases")
+    .update({
+      archive_box_number: caseData.archive_box_number ?? null,
+      archive_year: caseData.archive_year ?? null,
+      closing_date: caseData.closing_date ?? null,
+    })
+    .eq("id", savedCaseId)
+    .eq("studio_id", studioId);
+
+  if (archiveError) {
+    throw new Error(
+      `Pratica salvata, ma dati di archiviazione non aggiornati: ${archiveError.message}`
+    );
+  }
   return savedCaseId;
 }
 

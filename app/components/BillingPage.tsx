@@ -28,6 +28,12 @@ type InvoiceRecord = {
   due_date: string | null;
   description: string | null;
   taxable_amount: number;
+  general_expenses_amount: number;
+  cpa_amount: number;
+  vat_enabled: boolean;
+  exempt_expenses_amount: number;
+  withholding_enabled: boolean;
+  withholding_amount: number;
   expenses_amount: number;
   tax_amount: number;
   total_amount: number;
@@ -57,7 +63,12 @@ type InvoiceForm = {
   due_date: string;
   description: string;
   taxable_amount: string;
-  expenses_amount: string;
+  general_expenses_amount: string;
+  cpa_amount: string;
+  vat_enabled: boolean;
+  exempt_expenses_amount: string;
+  withholding_enabled: boolean;
+  withholding_amount: string;
   tax_amount: string;
   total_amount: string;
   cost_destination: string;
@@ -83,7 +94,12 @@ const emptyInvoiceForm: InvoiceForm = {
   due_date: "",
   description: "",
   taxable_amount: "0",
-  expenses_amount: "0",
+  general_expenses_amount: "0",
+  cpa_amount: "0",
+  vat_enabled: true,
+  exempt_expenses_amount: "0",
+  withholding_enabled: true,
+  withholding_amount: "0",
   tax_amount: "0",
   total_amount: "0",
   cost_destination: "compensi_cliente",
@@ -100,6 +116,35 @@ const emptyPaymentForm: PaymentForm = {
   transaction_reference: "",
   notes: "",
 };
+
+function calculateInvoice(form: InvoiceForm): InvoiceForm {
+  const fees = Number(form.taxable_amount || 0);
+  const generalExpenses = roundMoney(fees * 0.15);
+  const cpa = roundMoney((fees + generalExpenses) * 0.04);
+  const vat = form.vat_enabled
+    ? roundMoney((fees + generalExpenses + cpa) * 0.22)
+    : 0;
+  const withholding = form.withholding_enabled
+    ? roundMoney((fees + generalExpenses) * 0.2)
+    : 0;
+  const exempt = Number(form.exempt_expenses_amount || 0);
+  const total = roundMoney(
+    fees + generalExpenses + cpa + vat + exempt - withholding
+  );
+
+  return {
+    ...form,
+    general_expenses_amount: String(generalExpenses),
+    cpa_amount: String(cpa),
+    tax_amount: String(vat),
+    withholding_amount: String(withholding),
+    total_amount: String(total),
+  };
+}
+
+function roundMoney(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
 
 export default function BillingPage({
   studioId,
@@ -125,6 +170,7 @@ export default function BillingPage({
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<number[]>([]);
 
   async function loadBillingData() {
     setLoading(true);
@@ -134,7 +180,7 @@ export default function BillingPage({
       supabase
         .from("invoices")
         .select(
-          "id, case_id, client_contact_id, invoice_number, issue_date, due_date, description, taxable_amount, expenses_amount, tax_amount, total_amount, paid_amount, status, cost_destination, issuing_lawyer_user_id, issuing_lawyer_name, notes"
+          "id, case_id, client_contact_id, invoice_number, issue_date, due_date, description, taxable_amount, expenses_amount, general_expenses_amount, cpa_amount, vat_enabled, exempt_expenses_amount, withholding_enabled, withholding_amount, tax_amount, total_amount, paid_amount, status, cost_destination, issuing_lawyer_user_id, issuing_lawyer_name, notes"
         )
         .order("issue_date", { ascending: false }),
 
@@ -214,18 +260,38 @@ export default function BillingPage({
     };
   }, [invoices, unpaidInvoices.length]);
 
-  function updateInvoiceForm(field: keyof InvoiceForm, value: string) {
+  const selectedInvoiceTotal = useMemo(
+    () =>
+      invoices
+        .filter((item) => selectedInvoiceIds.includes(item.id))
+        .reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
+    [invoices, selectedInvoiceIds]
+  );
+
+  function toggleInvoiceSelection(id: number) {
+    setSelectedInvoiceIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
+  }
+
+  function updateInvoiceForm(
+    field: keyof InvoiceForm,
+    value: string | boolean
+  ) {
     setInvoiceForm((current) => {
       const updated = { ...current, [field]: value };
 
       if (
-        ["taxable_amount", "expenses_amount", "tax_amount"].includes(field)
+        [
+          "taxable_amount",
+          "exempt_expenses_amount",
+          "vat_enabled",
+          "withholding_enabled",
+        ].includes(field)
       ) {
-        updated.total_amount = String(
-          Number(updated.taxable_amount || 0) +
-            Number(updated.expenses_amount || 0) +
-            Number(updated.tax_amount || 0)
-        );
+        return calculateInvoice(updated);
       }
 
       if (field === "case_id" && value) {
@@ -271,7 +337,14 @@ export default function BillingPage({
       due_date: item.due_date ?? "",
       description: item.description ?? "",
       taxable_amount: String(item.taxable_amount ?? 0),
-      expenses_amount: String(item.expenses_amount ?? 0),
+      general_expenses_amount: String(item.general_expenses_amount ?? 0),
+      cpa_amount: String(item.cpa_amount ?? 0),
+      vat_enabled: item.vat_enabled ?? true,
+      exempt_expenses_amount: String(
+        item.exempt_expenses_amount ?? item.expenses_amount ?? 0
+      ),
+      withholding_enabled: item.withholding_enabled ?? true,
+      withholding_amount: String(item.withholding_amount ?? 0),
       tax_amount: String(item.tax_amount ?? 0),
       total_amount: String(item.total_amount ?? 0),
       cost_destination: item.cost_destination ?? "compensi_cliente",
@@ -323,7 +396,17 @@ export default function BillingPage({
       due_date: invoiceForm.due_date || null,
       description: invoiceForm.description.trim() || null,
       taxable_amount: Number(invoiceForm.taxable_amount || 0),
-      expenses_amount: Number(invoiceForm.expenses_amount || 0),
+      expenses_amount: Number(invoiceForm.exempt_expenses_amount || 0),
+      general_expenses_amount: Number(
+        invoiceForm.general_expenses_amount || 0
+      ),
+      cpa_amount: Number(invoiceForm.cpa_amount || 0),
+      vat_enabled: invoiceForm.vat_enabled,
+      exempt_expenses_amount: Number(
+        invoiceForm.exempt_expenses_amount || 0
+      ),
+      withholding_enabled: invoiceForm.withholding_enabled,
+      withholding_amount: Number(invoiceForm.withholding_amount || 0),
       tax_amount: Number(invoiceForm.tax_amount || 0),
       total_amount: Number(invoiceForm.total_amount || 0),
       cost_destination: invoiceForm.cost_destination,
@@ -439,6 +522,22 @@ export default function BillingPage({
 
         {message && <p className="mt-4 text-sm">{message}</p>}
 
+        {selectedInvoiceIds.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-neutral-100 p-3 text-sm">
+            <span>
+              Selezionate: {selectedInvoiceIds.length} · Totale{" "}
+              <strong>{formatMoney(selectedInvoiceTotal)}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedInvoiceIds([])}
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5"
+            >
+              Deseleziona
+            </button>
+          </div>
+        )}
+
         <div className="mt-6 space-y-4">
           {unpaidInvoices.length === 0 ? (
             <p className="text-sm text-neutral-500">
@@ -456,6 +555,8 @@ export default function BillingPage({
                 )}
                 onEdit={() => openEditInvoice(item)}
                 onPayment={() => openPayment(item)}
+                selected={selectedInvoiceIds.includes(item.id)}
+                onToggleSelected={() => toggleInvoiceSelection(item.id)}
               />
             ))
           )}
@@ -497,6 +598,8 @@ export default function BillingPage({
                     (payment) => payment.invoice_id === item.id
                   )}
                   onEdit={() => openEditInvoice(item)}
+                  selected={selectedInvoiceIds.includes(item.id)}
+                  onToggleSelected={() => toggleInvoiceSelection(item.id)}
                 />
               ))
             )}
@@ -549,6 +652,8 @@ function InvoiceCard({
   payments,
   onEdit,
   onPayment,
+  selected,
+  onToggleSelected,
 }: {
   invoice: InvoiceRecord;
   clients: ClientRecord[];
@@ -556,6 +661,8 @@ function InvoiceCard({
   payments: PaymentRecord[];
   onEdit: () => void;
   onPayment?: () => void;
+  selected: boolean;
+  onToggleSelected: () => void;
 }) {
   const client = clients.find(
     (item) => item.id === invoice.client_contact_id
@@ -567,7 +674,15 @@ function InvoiceCard({
   return (
     <article className="rounded-2xl border border-neutral-200 p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
+        <div className="flex min-w-0 gap-3">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelected}
+            aria-label={`Seleziona fattura ${invoice.invoice_number}`}
+            className="mt-1 h-5 w-5 rounded border-neutral-300"
+          />
+          <div>
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-lg font-semibold">
               Fattura n. {invoice.invoice_number}
@@ -597,6 +712,7 @@ function InvoiceCard({
               " "
             )}
           </p>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -684,7 +800,7 @@ function InvoiceModal({
   profiles: ProfileOption[];
   saving: boolean;
   message: string;
-  onChange: (field: keyof InvoiceForm, value: string) => void;
+  onChange: (field: keyof InvoiceForm, value: string | boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
 }) {
@@ -783,31 +899,64 @@ function InvoiceModal({
           />
 
           <Input
-            label="Imponibile"
+            label="Onorari"
             type="number"
             value={form.taxable_amount}
             onChange={(value) => onChange("taxable_amount", value)}
           />
 
           <Input
-            label="Spese"
+            label="Spese generali 15%"
             type="number"
-            value={form.expenses_amount}
-            onChange={(value) => onChange("expenses_amount", value)}
+            value={form.general_expenses_amount}
+            readOnly
           />
 
           <Input
-            label="Imposte / accessori"
+            label="CPA 4%"
+            type="number"
+            value={form.cpa_amount}
+            readOnly
+          />
+
+          <Checkbox
+            label="Applica IVA 22%"
+            checked={form.vat_enabled}
+            onChange={(value) => onChange("vat_enabled", value)}
+          />
+
+          <Input
+            label="IVA"
             type="number"
             value={form.tax_amount}
-            onChange={(value) => onChange("tax_amount", value)}
+            readOnly
+          />
+
+          <Input
+            label="Spese esenti"
+            type="number"
+            value={form.exempt_expenses_amount}
+            onChange={(value) => onChange("exempt_expenses_amount", value)}
+          />
+
+          <Checkbox
+            label="Applica ritenuta d’acconto 20%"
+            checked={form.withholding_enabled}
+            onChange={(value) => onChange("withholding_enabled", value)}
+          />
+
+          <Input
+            label="Ritenuta d’acconto"
+            type="number"
+            value={form.withholding_amount}
+            readOnly
           />
 
           <Input
             label="Totale"
             type="number"
             value={form.total_amount}
-            onChange={(value) => onChange("total_amount", value)}
+            readOnly
           />
 
           <TextArea
@@ -958,11 +1107,13 @@ function Input({
   value,
   onChange,
   type = "text",
+  readOnly = false,
 }: {
   label: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
   type?: string;
+  readOnly?: boolean;
 }) {
   return (
     <label className="block">
@@ -971,9 +1122,34 @@ function Input({
         type={type}
         step={type === "number" ? "0.01" : undefined}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="w-full rounded-xl border border-neutral-300 px-4 py-3"
+        readOnly={readOnly}
+        onChange={(event) => onChange?.(event.target.value)}
+        className={`w-full rounded-xl border border-neutral-300 px-4 py-3 ${
+          readOnly ? "bg-neutral-100 text-neutral-600" : ""
+        }`}
       />
+    </label>
+  );
+}
+
+function Checkbox({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-3 rounded-xl border border-neutral-300 px-4 py-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-5 w-5 rounded border-neutral-300"
+      />
+      <span className="text-sm">{label}</span>
     </label>
   );
 }

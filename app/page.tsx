@@ -36,6 +36,7 @@ import BackupPage from "./components/BackupPage";
 import AdvancedDashboard from "./components/AdvancedDashboard";
 import GlobalSearchPage from "./components/GlobalSearchPage";
 import DeadlinesPage from "./components/DeadlinesPage";
+import HearingsPage from "./components/HearingsPage";
 
 type DashboardCounts = {
   contacts: number;
@@ -274,6 +275,8 @@ export default function Home() {
           responsible_user_id,
           opening_date,
           closing_date,
+          archive_box_number,
+          archive_year,
           description,
           notes,
           needs_review,
@@ -643,6 +646,16 @@ export default function Home() {
               <DeadlinesPage
                 studioId={studioId}
                 events={events}
+                cases={cases}
+                onRefresh={refreshAllData}
+                onOpenCase={openCaseById}
+              />
+            )}
+
+            {activeSection === "Udienze" && (
+              <HearingsPage
+                studioId={studioId}
+                events={hearingEvents}
                 cases={cases}
                 onRefresh={refreshAllData}
                 onOpenCase={openCaseById}

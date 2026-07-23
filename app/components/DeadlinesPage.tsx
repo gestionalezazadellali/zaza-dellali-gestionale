@@ -55,6 +55,7 @@ export default function DeadlinesPage({
   const [deletingEventId, setDeletingEventId] = useState<number | null>(null);
   const [currentTime] = useState(Date.now);
   const [showExpired, setShowExpired] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [message, setMessage] = useState("");
 
   const deadlines = useMemo(
@@ -68,26 +69,59 @@ export default function DeadlinesPage({
     [events]
   );
 
-  const visibleDeadlines = useMemo(
-    () =>
-      deadlines.filter((item) => {
-        const completed = item.status === "completato";
-        const expired =
-          !completed && new Date(item.start_at).getTime() < currentTime;
-        return !expired || showExpired;
-      }),
-    [currentTime, deadlines, showExpired]
-  );
-
-  const expiredCount = useMemo(
+  const activeDeadlines = useMemo(
     () =>
       deadlines.filter(
         (item) =>
           item.status !== "completato" &&
-          new Date(item.start_at).getTime() < currentTime
-      ).length,
+          new Date(item.start_at).getTime() >= currentTime
+      ),
     [currentTime, deadlines]
   );
+
+  const archivedDeadlines = useMemo(
+    () =>
+      deadlines.filter(
+        (item) =>
+          item.status === "completato" ||
+          new Date(item.start_at).getTime() < currentTime
+      ),
+    [currentTime, deadlines, showExpired]
+  );
+
+  const visibleDeadlines = showExpired
+    ? archivedDeadlines
+    : activeDeadlines;
+  const expiredCount = archivedDeadlines.length;
+
+  function toggleSelected(id: number) {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
+  }
+
+  async function completeSelected() {
+    const actionable = selectedIds.filter((id) =>
+      deadlines.some((item) => item.id === id && item.status !== "completato")
+    );
+    if (actionable.length === 0) return;
+    if (!window.confirm(`Segnare come completate ${actionable.length} scadenze?`)) return;
+
+    const { error } = await supabase
+      .from("events")
+      .update({ status: "completato", completed_at: new Date().toISOString() })
+      .eq("studio_id", studioId)
+      .in("id", actionable);
+    if (error) {
+      setMessage(`Errore: ${error.message}`);
+      return;
+    }
+    setSelectedIds([]);
+    await onRefresh();
+    setMessage("Scadenze selezionate completate.");
+  }
 
   function updateForm(field: keyof DeadlineForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -261,17 +295,35 @@ export default function DeadlinesPage({
 
         {message && <p className="mt-4 text-sm">{message}</p>}
 
-        {expiredCount > 0 && (
+        <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setShowExpired((current) => !current)}
             className="mt-4 rounded-xl border border-neutral-300 px-4 py-2 text-sm"
           >
             {showExpired
-              ? "Nascondi scadenze scadute"
-              : `Mostra scadenze scadute (${expiredCount})`}
+              ? "Torna alle scadenze aperte"
+              : `Scadute e completate (${expiredCount})`}
           </button>
-        )}
+          {selectedIds.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={completeSelected}
+                className="rounded-xl bg-green-700 px-4 py-2 text-sm text-white"
+              >
+                Completa selezionate ({selectedIds.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedIds([])}
+                className="rounded-xl border border-neutral-300 px-4 py-2 text-sm"
+              >
+                Deseleziona
+              </button>
+            </>
+          )}
+        </div>
       </section>
 
       <section className="space-y-3">
@@ -294,6 +346,13 @@ export default function DeadlinesPage({
                 className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={() => toggleSelected(item.id)}
+                    aria-label={`Seleziona ${item.title}`}
+                    className="mt-1 h-5 w-5 rounded border-neutral-300"
+                  />
                   <button
                     type="button"
                     disabled={!caseRecord}
