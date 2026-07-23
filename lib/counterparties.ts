@@ -341,6 +341,38 @@ export async function updateCounterparty(
   await requirePermission("can_edit_clients");
   const payload = validateCounterpartyInput(input);
 
+  // Legacy imports may contain deleted duplicates protected by an old unique
+  // constraint. Preserve those records in the trash, but release the desired
+  // active name before updating the current registry entry.
+  const { data: deletedDuplicates, error: duplicateReadError } = await supabase
+    .from("counterparties")
+    .select("id")
+    .eq("studio_id", studioId)
+    .neq("id", counterpartyId)
+    .not("deleted_at", "is", null)
+    .or(
+      `name.eq.${escapePostgrestValue(payload.name)},normalized_name.eq.${escapePostgrestValue(payload.normalized_name)}`
+    );
+
+  if (duplicateReadError) throw duplicateReadError;
+
+  for (const duplicate of deletedDuplicates ?? []) {
+    const suffix = ` [eliminata #${duplicate.id}]`;
+    const archivedName = `${payload.name}${suffix}`;
+    const { error: releaseError } = await supabase
+      .from("counterparties")
+      .update({
+        name: archivedName,
+        display_name: archivedName,
+        normalized_name: `${payload.normalized_name} eliminata ${duplicate.id}`,
+      })
+      .eq("studio_id", studioId)
+      .eq("id", duplicate.id)
+      .not("deleted_at", "is", null);
+
+    if (releaseError) throw releaseError;
+  }
+
   const { data, error } = await supabase
     .from("counterparties")
     .update(payload)
@@ -624,6 +656,10 @@ function sanitizeSearchValue(value: string) {
     .replace(/[^\p{L}\p{N}@+_.\-\s]/gu, " ")
     .replace(/\s+/g, " ")
     .slice(0, 100);
+}
+
+function escapePostgrestValue(value: string) {
+  return `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 }
 
 async function requirePermission(permission: PermissionName) {

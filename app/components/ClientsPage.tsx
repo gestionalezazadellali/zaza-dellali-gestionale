@@ -268,13 +268,27 @@ export default function ClientsPage({
           .from("contacts")
           .update(payload)
           .eq("id", editingClient.id)
-      : await supabase.from("contacts").insert(payload);
+          .select("id")
+          .single()
+      : await supabase.from("contacts").insert(payload).select("id").single();
 
     if (result.error) {
       setMessage(`Errore: ${result.error.message}`);
       setSaving(false);
       return;
     }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    await supabase.from("audit_log").insert({
+      studio_id: studioId,
+      user_id: user?.id ?? null,
+      action: editingClient ? "update" : "insert",
+      entity_type: "cliente",
+      entity_id: String(result.data.id),
+      new_data: payload,
+    });
 
     await onClientsChanged();
 

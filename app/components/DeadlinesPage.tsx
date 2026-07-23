@@ -123,6 +123,42 @@ export default function DeadlinesPage({
     setMessage("Scadenze selezionate completate.");
   }
 
+  async function deleteSelected() {
+    if (selectedIds.length === 0) return;
+    if (
+      !window.confirm(
+        `Spostare nel cestino le ${selectedIds.length} scadenze selezionate?`
+      )
+    )
+      return;
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setMessage("Utente non autenticato.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("events")
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: user.id,
+        delete_reason: "Eliminazione multipla dalla sezione Scadenze",
+      })
+      .eq("studio_id", studioId)
+      .in("id", selectedIds);
+
+    if (error) {
+      setMessage(`Errore: ${error.message}`);
+      return;
+    }
+    setSelectedIds([]);
+    await onRefresh();
+    setMessage("Scadenze selezionate spostate nel cestino.");
+  }
+
   function updateForm(field: keyof DeadlineForm, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
@@ -307,13 +343,24 @@ export default function DeadlinesPage({
           </button>
           {selectedIds.length > 0 && (
             <>
-              <button
-                type="button"
-                onClick={completeSelected}
-                className="rounded-xl bg-green-700 px-4 py-2 text-sm text-white"
-              >
-                Completa selezionate ({selectedIds.length})
-              </button>
+              {!showExpired && (
+                <button
+                  type="button"
+                  onClick={completeSelected}
+                  className="rounded-xl bg-green-700 px-4 py-2 text-sm text-white"
+                >
+                  Completa selezionate ({selectedIds.length})
+                </button>
+              )}
+              {showExpired && (
+                <button
+                  type="button"
+                  onClick={deleteSelected}
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white"
+                >
+                  Elimina selezionate ({selectedIds.length})
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setSelectedIds([])}

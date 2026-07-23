@@ -173,6 +173,23 @@ export default function CounterpartiesPage({
         ? await updateCounterparty(studioId, editingCounterparty.id, input)
         : await createCounterparty(studioId, input);
 
+      const { supabase } = await import("../../lib/supabase");
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      await supabase.from("audit_log").insert({
+        studio_id: studioId,
+        user_id: user?.id ?? null,
+        action: editingCounterparty ? "update" : "insert",
+        entity_type: "controparte",
+        entity_id: String(saved.id),
+        new_data: {
+          display_name: saved.display_name,
+          fiscal_code: saved.fiscal_code,
+          organization: saved.organization,
+        },
+      });
+
       await Promise.all([onChanged(), loadCounterparties(search)]);
       setSelectedCounterparty(saved);
       setLinkedCases(

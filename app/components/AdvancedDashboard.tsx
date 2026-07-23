@@ -2,155 +2,138 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
-
-type DashboardCounts = {
-  contacts: number;
-  cases: number;
-  hearings: number;
-  deadlines: number;
-};
+import GlobalSearchPage from "./GlobalSearchPage";
 
 type CalendarEvent = {
   id: number;
   title: string;
+  description?: string | null;
   start_at: string;
   is_hearing: boolean;
   is_deadline: boolean;
+  status?: string | null;
   case_id: number | null;
 };
 
-type CaseStatusRow = {
-  status: string | null;
-};
-
-type InvoiceRow = {
-  total_amount: number;
-  paid_amount: number;
-  status: string;
-};
-
-type TitleRow = {
-  payment_status: string;
-  legal_costs: number;
-  principal_amount: number;
-};
-
-type BackupSettingsRow = {
-  enabled: boolean;
-  last_successful_backup_at: string | null;
-  last_backup_status: string | null;
+type UpdateRecord = {
+  id: string;
+  title: string;
+  detail: string;
+  date: string;
+  caseId?: number;
 };
 
 export default function AdvancedDashboard({
-  counts,
   events,
   loading,
   onOpenCase,
+  onOpenClient,
+  onOpenCounterparty,
+  onOpenSection,
 }: {
-  counts: DashboardCounts;
   events: CalendarEvent[];
   loading: boolean;
   onOpenCase: (caseId: number) => void;
+  onOpenClient: (clientId: number) => void;
+  onOpenCounterparty: (counterpartyId: number) => void;
+  onOpenSection: (section: string) => void;
 }) {
-  const [caseRows, setCaseRows] = useState<CaseStatusRow[]>([]);
-  const [invoiceRows, setInvoiceRows] = useState<InvoiceRow[]>([]);
-  const [titleRows, setTitleRows] = useState<TitleRow[]>([]);
-  const [backup, setBackup] = useState<BackupSettingsRow | null>(null);
+  const [updates, setUpdates] = useState<UpdateRecord[]>([]);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    async function loadAdvancedData() {
-      const [casesResult, invoicesResult, titlesResult, backupResult] =
-        await Promise.all([
-          supabase
-            .from("cases")
-            .select("status")
-            .is("deleted_at", null),
-          supabase
-            .from("invoices")
-            .select("total_amount, paid_amount, status"),
-          supabase
-            .from("case_titles")
-            .select("payment_status, legal_costs, principal_amount"),
-          supabase
-            .from("backup_settings")
-            .select(
-              "enabled, last_successful_backup_at, last_backup_status"
-            )
-            .single(),
-        ]);
+    async function loadUpdates() {
+      const [activitiesResult, auditResult] = await Promise.all([
+        supabase
+          .from("case_activities")
+          .select("id, case_id, activity_type, title, description, activity_at")
+          .order("activity_at", { ascending: false })
+          .limit(15),
+        supabase
+          .from("audit_log")
+          .select("id, action, entity_type, entity_id, new_data, created_at")
+          .order("created_at", { ascending: false })
+          .limit(15),
+      ]);
 
-      const error =
-        casesResult.error ||
-        invoicesResult.error ||
-        titlesResult.error ||
-        backupResult.error;
-
-      if (error) {
-        setMessage(error.message);
+      if (activitiesResult.error && auditResult.error) {
+        setMessage("Gli ultimi aggiornamenti non sono momentaneamente disponibili.");
         return;
       }
 
-      setCaseRows((casesResult.data ?? []) as CaseStatusRow[]);
-      setInvoiceRows((invoicesResult.data ?? []) as InvoiceRow[]);
-      setTitleRows((titlesResult.data ?? []) as TitleRow[]);
-      setBackup((backupResult.data ?? null) as BackupSettingsRow | null);
+      const activityUpdates: UpdateRecord[] = (
+        activitiesResult.data ?? []
+      ).map((item) => ({
+        id: `activity-${item.id}`,
+        title: item.title,
+        detail:
+          item.description ||
+          item.activity_type?.replaceAll("_", " ") ||
+          "Aggiornamento pratica",
+        date: item.activity_at,
+        caseId: item.case_id,
+      }));
+
+      const auditUpdates: UpdateRecord[] = (auditResult.data ?? []).map(
+        (item) => ({
+          id: `audit-${item.id}`,
+          title: auditTitle(item.action, item.entity_type),
+          detail:
+            getAuditDisplayName(item.new_data) ||
+            `${item.entity_type || "elemento"} ${item.entity_id || ""}`.trim(),
+          date: item.created_at,
+        })
+      );
+
+      setUpdates(
+        [...activityUpdates, ...auditUpdates]
+          .sort(
+            (a, b) =>
+              new Date(b.date).getTime() - new Date(a.date).getTime()
+          )
+          .slice(0, 10)
+      );
     }
 
-    loadAdvancedData();
+    void loadUpdates();
   }, []);
 
+  const now = Date.now();
   const upcomingHearings = useMemo(
     () =>
       events
         .filter(
           (event) =>
-            event.is_hearing === true &&
-            event.is_deadline !== true &&
-            new Date(event.start_at) >= new Date()
+            event.is_hearing &&
+            !event.is_deadline &&
+            new Date(event.start_at).getTime() >= now
         )
         .sort(
           (a, b) =>
             new Date(a.start_at).getTime() -
             new Date(b.start_at).getTime()
         )
-        .slice(0, 5),
-    [events]
+        .slice(0, 15),
+    [events, now]
   );
 
-  const outstandingInvoices = useMemo(
+  const upcomingDeadlines = useMemo(
     () =>
-      invoiceRows.reduce(
-        (sum, item) =>
-          sum +
-          Math.max(
-            Number(item.total_amount || 0) -
-              Number(item.paid_amount || 0),
-            0
-          ),
-        0
-      ),
-    [invoiceRows]
+      events
+        .filter(
+          (event) =>
+            event.is_deadline &&
+            event.status !== "completato" &&
+            new Date(event.start_at).getTime() >= now
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.start_at).getTime() -
+            new Date(b.start_at).getTime()
+        )
+        .slice(0, 15),
+    [events, now]
   );
-
-  const unpaidTitles = useMemo(
-    () =>
-      titleRows.filter(
-        (item) => item.payment_status !== "pagato"
-      ).length,
-    [titleRows]
-  );
-
-  const casesByStatus = useMemo(() => {
-    const map = new Map<string, number>();
-
-    for (const item of caseRows) {
-      const key = item.status || "non_indicato";
-      map.set(key, (map.get(key) ?? 0) + 1);
-    }
-
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [caseRows]);
 
   if (loading) {
     return (
@@ -162,130 +145,60 @@ export default function AdvancedDashboard({
 
   return (
     <div className="space-y-6">
-      {message && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Alcuni dati avanzati non sono disponibili: {message}
-        </div>
-      )}
-
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Clienti" value={String(counts.contacts)} />
-        <MetricCard label="Pratiche" value={String(counts.cases)} />
-        <MetricCard
-          label="Da incassare"
-          value={formatMoney(outstandingInvoices)}
-        />
-        <MetricCard
-          label="Provvedimenti non pagati"
-          value={String(unpaidTitles)}
-        />
-      </section>
+      <GlobalSearchPage
+        onOpenCase={onOpenCase}
+        onOpenClient={onOpenClient}
+        onOpenCounterparty={onOpenCounterparty}
+        onOpenSection={onOpenSection}
+      />
 
       <section className="grid gap-6 xl:grid-cols-2">
-        <Panel title="Prossime udienze">
-          <EventList events={upcomingHearings} onOpenCase={onOpenCase} />
+        <Panel title={`Prossime udienze (${upcomingHearings.length})`}>
+          <EventList
+            events={upcomingHearings}
+            emptyText="Nessuna udienza futura."
+            onOpenCase={onOpenCase}
+          />
         </Panel>
 
-        <Panel title="Backup">
-          <div className="space-y-3">
-            <InfoRow
-              label="Stato"
-              value={backup?.enabled ? "Attivo" : "Disattivato"}
-            />
-            <InfoRow
-              label="Ultimo esito"
-              value={
-                backup?.last_backup_status?.replaceAll("_", " ") ||
-                "Mai eseguito"
-              }
-            />
-            <InfoRow
-              label="Ultima copia"
-              value={formatDateTime(
-                backup?.last_successful_backup_at ?? null
-              )}
-            />
-          </div>
+        <Panel title={`Prossime scadenze (${upcomingDeadlines.length})`}>
+          <EventList
+            events={upcomingDeadlines}
+            emptyText="Nessuna scadenza futura."
+            onOpenCase={onOpenCase}
+          />
         </Panel>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-        <Panel title="Pratiche per stato">
+      <Panel title="Ultimi aggiornamenti">
+        {message && <p className="mb-3 text-sm text-amber-700">{message}</p>}
+        {updates.length === 0 ? (
+          <p className="text-sm text-neutral-500">
+            Nessun aggiornamento registrato.
+          </p>
+        ) : (
           <div className="space-y-3">
-            {casesByStatus.length === 0 ? (
-              <p className="text-sm text-neutral-500">
-                Nessun dato disponibile.
-              </p>
-            ) : (
-              casesByStatus.map(([status, total]) => {
-                const percentage =
-                  counts.cases > 0
-                    ? Math.round((total / counts.cases) * 100)
-                    : 0;
-
-                return (
-                  <div key={status}>
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="capitalize">
-                        {status.replaceAll("_", " ")}
-                      </span>
-                      <span className="font-medium">{total}</span>
-                    </div>
-
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-100">
-                      <div
-                        className="h-full rounded-full bg-neutral-900"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            {updates.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                disabled={!item.caseId}
+                onClick={() => item.caseId && onOpenCase(item.caseId)}
+                className="w-full rounded-xl border border-neutral-200 p-4 text-left disabled:cursor-default"
+              >
+                <div className="flex flex-col justify-between gap-1 sm:flex-row">
+                  <span className="font-medium">{item.title}</span>
+                  <span className="text-xs text-neutral-500">
+                    {formatDateTime(item.date)}
+                  </span>
+                </div>
+                <p className="mt-1 text-sm text-neutral-600">{item.detail}</p>
+              </button>
+            ))}
           </div>
-        </Panel>
-
-        <Panel title="Riepilogo operativo">
-          <div className="space-y-3">
-            <InfoRow
-              label="Udienze complessive"
-              value={String(counts.hearings)}
-            />
-            <InfoRow
-              label="Scadenze complessive"
-              value={String(counts.deadlines)}
-            />
-            <InfoRow
-              label="Fatture aperte"
-              value={String(
-                invoiceRows.filter(
-                  (item) => item.status !== "saldata"
-                ).length
-              )}
-            />
-            <InfoRow
-              label="Provvedimenti inseriti"
-              value={String(titleRows.length)}
-            />
-          </div>
-        </Panel>
-      </section>
+        )}
+      </Panel>
     </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <article className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <p className="text-sm text-neutral-500">{label}</p>
-      <p className="mt-3 text-3xl font-semibold">{value}</p>
-    </article>
   );
 }
 
@@ -306,68 +219,66 @@ function Panel({
 
 function EventList({
   events,
+  emptyText,
   onOpenCase,
 }: {
   events: CalendarEvent[];
+  emptyText: string;
   onOpenCase: (caseId: number) => void;
 }) {
   if (events.length === 0) {
-    return (
-      <p className="text-sm text-neutral-500">
-        Nessun evento futuro.
-      </p>
-    );
+    return <p className="text-sm text-neutral-500">{emptyText}</p>;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="max-h-[32rem] space-y-3 overflow-y-auto pr-1">
       {events.map((event) => (
         <button
           key={event.id}
           type="button"
           disabled={!event.case_id}
-          onClick={() => {
-            if (event.case_id) onOpenCase(event.case_id);
-          }}
+          onClick={() => event.case_id && onOpenCase(event.case_id)}
           className="w-full rounded-xl border border-neutral-200 p-4 text-left disabled:cursor-default"
         >
           <p className="font-medium">{event.title}</p>
           <p className="mt-1 text-sm text-neutral-500">
             {formatDateTime(event.start_at)}
           </p>
+          {event.description && (
+            <p className="mt-1 text-sm text-neutral-600">
+              {event.description}
+            </p>
+          )}
         </button>
       ))}
     </div>
   );
 }
 
-function InfoRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 border-b border-neutral-100 pb-3 last:border-0 last:pb-0">
-      <span className="text-sm text-neutral-500">{label}</span>
-      <span className="text-right text-sm font-medium capitalize">
-        {value}
-      </span>
-    </div>
-  );
+function auditTitle(action: string | null, entityType: string | null) {
+  const actionLabel =
+    action === "insert"
+      ? "Creato"
+      : action === "update"
+        ? "Modificato"
+        : action === "delete"
+          ? "Eliminato"
+          : action || "Aggiornato";
+  return `${actionLabel} ${entityType || "elemento"}`.replaceAll("_", " ");
 }
 
-function formatMoney(value: number) {
-  return new Intl.NumberFormat("it-IT", {
-    style: "currency",
-    currency: "EUR",
-  }).format(Number(value || 0));
+function getAuditDisplayName(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  for (const key of ["display_name", "title", "name", "invoice_number"]) {
+    if (typeof record[key] === "string" && record[key]) {
+      return String(record[key]);
+    }
+  }
+  return "";
 }
 
-function formatDateTime(value: string | null) {
-  if (!value) return "Non disponibile";
-
+function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("it-IT", {
     day: "2-digit",
     month: "2-digit",

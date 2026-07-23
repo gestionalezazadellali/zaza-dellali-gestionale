@@ -620,9 +620,11 @@ export default function Home() {
             {activeSection === "Dashboard" && (
               <AdvancedDashboard
                 loading={loading}
-                counts={counts}
-                events={hearingEvents}
+                events={events}
                 onOpenCase={openActiveCaseById}
+                onOpenClient={openClientById}
+                onOpenCounterparty={openCounterpartyById}
+                onOpenSection={setActiveSection}
               />
             )}
 
@@ -752,6 +754,7 @@ export default function Home() {
               "Clienti",
               "Controparti",
               "Pratiche",
+              "Udienze",
               "Scadenze",
               "Fatture",
               "Utenti",
