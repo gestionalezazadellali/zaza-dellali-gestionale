@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import PermanentDeleteButton from "./PermanentDeleteButton";
 
 type TrashUser = {
   id: string;
@@ -16,7 +17,13 @@ type TrashUser = {
   delete_reason: string | null;
 };
 
-export default function TrashUsersPage({ studioId }: { studioId: string }) {
+export default function TrashUsersPage({
+  studioId,
+  onRefresh,
+}: {
+  studioId: string;
+  onRefresh: () => Promise<void>;
+}) {
   const [users, setUsers] = useState<TrashUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoringUserId, setRestoringUserId] = useState<string | null>(null);
@@ -150,16 +157,27 @@ export default function TrashUsersPage({ studioId }: { studioId: string }) {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleRestore(user)}
-                  disabled={restoringUserId === user.id}
-                  className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {restoringUserId === user.id
-                    ? "Ripristino..."
-                    : "Ripristina"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRestore(user)}
+                    disabled={restoringUserId === user.id}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {restoringUserId === user.id
+                      ? "Ripristino..."
+                      : "Ripristina"}
+                  </button>
+                  <PermanentDeleteButton
+                    resource="user"
+                    id={user.id}
+                    label={getUserName(user)}
+                    onDeleted={async () => {
+                      await Promise.all([loadTrashUsers(), onRefresh()]);
+                    }}
+                    onMessage={setMessage}
+                  />
+                </div>
               </div>
             </article>
           ))}

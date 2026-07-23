@@ -6,6 +6,7 @@ import {
   searchCounterparties,
   type CounterpartyRecord,
 } from "../../lib/counterparties";
+import PermanentDeleteButton from "./PermanentDeleteButton";
 
 export default function TrashCounterpartiesPage({
   studioId,
@@ -126,14 +127,25 @@ export default function TrashCounterpartiesPage({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => void handleRestore(item)}
-                  disabled={restoringId === item.id}
-                  className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {restoringId === item.id ? "Ripristino..." : "Ripristina"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleRestore(item)}
+                    disabled={restoringId === item.id}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {restoringId === item.id ? "Ripristino..." : "Ripristina"}
+                  </button>
+                  <PermanentDeleteButton
+                    resource="counterparty"
+                    id={item.id}
+                    label={item.display_name}
+                    onDeleted={async () => {
+                      await Promise.all([loadTrash(), onRefresh()]);
+                    }}
+                    onMessage={setMessage}
+                  />
+                </div>
               </div>
             </article>
           ))}

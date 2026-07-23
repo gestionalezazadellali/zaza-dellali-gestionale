@@ -194,36 +194,51 @@ export default function Home() {
   }, []);
 
   async function loadClients() {
-    const { data, error } = await supabase
-      .from("contacts")
-      .select(
-        `
-          id,
-          contact_type,
-          first_name,
-          last_name,
-          display_name,
-          fiscal_code,
-          vat_number,
-          email,
-          pec,
-          phone,
-          mobile_phone,
-          organization,
-          job_title,
-          address,
-          city,
-          postal_code,
-          province,
-          notes,
-          needs_review
-        `
-      )
-      .is("deleted_at", null)
-      .order("display_name", { ascending: true });
+    const pageSize = 1000;
+    const loadedClients: ClientRecord[] = [];
+    let offset = 0;
 
-    if (error) throw error;
-    setClients((data ?? []) as ClientRecord[]);
+    while (true) {
+      const { data, error } = await supabase
+        .from("contacts")
+        .select(
+          `
+            id,
+            contact_type,
+            first_name,
+            last_name,
+            display_name,
+            fiscal_code,
+            vat_number,
+            email,
+            pec,
+            phone,
+            mobile_phone,
+            organization,
+            job_title,
+            address,
+            city,
+            postal_code,
+            province,
+            notes,
+            needs_review
+          `
+        )
+        .is("deleted_at", null)
+        .order("display_name", { ascending: true })
+        .order("id", { ascending: true })
+        .range(offset, offset + pageSize - 1);
+
+      if (error) throw error;
+
+      const page = (data ?? []) as ClientRecord[];
+      loadedClients.push(...page);
+
+      if (page.length < pageSize) break;
+      offset += pageSize;
+    }
+
+    setClients(loadedClients);
   }
 
   async function loadCounterparties() {

@@ -6,6 +6,7 @@ import TrashClientsPage from "./TrashClientsPage";
 import TrashCounterpartiesPage from "./TrashCounterpartiesPage";
 import TrashEventsPage from "./TrashEventsPage";
 import TrashUsersPage from "./TrashUsersPage";
+import PermanentDeleteButton from "./PermanentDeleteButton";
 
 type TrashCase = {
   id: number;
@@ -152,16 +153,31 @@ export default function TrashCasesPage({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleRestore(item)}
-                  disabled={restoringCaseId === item.id}
-                  className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {restoringCaseId === item.id
-                    ? "Ripristino..."
-                    : "Ripristina"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRestore(item)}
+                    disabled={restoringCaseId === item.id}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {restoringCaseId === item.id
+                      ? "Ripristino..."
+                      : "Ripristina"}
+                  </button>
+                  <PermanentDeleteButton
+                    resource="case"
+                    id={item.id}
+                    label={
+                      item.title ||
+                      item.claimant_name_raw ||
+                      `Pratica n. ${item.id}`
+                    }
+                    onDeleted={async () => {
+                      await Promise.all([loadTrashCases(), onRefresh()]);
+                    }}
+                    onMessage={setMessage}
+                  />
+                </div>
               </div>
             </article>
           ))}
@@ -183,7 +199,7 @@ export default function TrashCasesPage({
         onRefresh={onRefresh}
       />
 
-      <TrashUsersPage studioId={studioId} />
+      <TrashUsersPage studioId={studioId} onRefresh={onRefresh} />
     </div>
   );
 }

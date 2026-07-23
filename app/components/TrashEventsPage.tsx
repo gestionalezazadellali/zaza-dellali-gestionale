@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import PermanentDeleteButton from "./PermanentDeleteButton";
 
 type TrashEvent = {
   id: number;
@@ -160,16 +161,27 @@ export default function TrashEventsPage({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleRestore(item)}
-                  disabled={restoringEventId === item.id}
-                  className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {restoringEventId === item.id
-                    ? "Ripristino..."
-                    : "Ripristina"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleRestore(item)}
+                    disabled={restoringEventId === item.id}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {restoringEventId === item.id
+                      ? "Ripristino..."
+                      : "Ripristina"}
+                  </button>
+                  <PermanentDeleteButton
+                    resource="event"
+                    id={item.id}
+                    label={item.title}
+                    onDeleted={async () => {
+                      await Promise.all([loadTrashEvents(), onRefresh()]);
+                    }}
+                    onMessage={setMessage}
+                  />
+                </div>
               </div>
             </article>
           ))}

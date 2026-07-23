@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import PermanentDeleteButton from "./PermanentDeleteButton";
 
 type TrashClient = {
   id: number;
@@ -185,16 +186,27 @@ export default function TrashClientsPage({
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => void handleRestore(item)}
-                  disabled={restoringClientId === item.id}
-                  className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {restoringClientId === item.id
-                    ? "Ripristino..."
-                    : "Ripristina"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleRestore(item)}
+                    disabled={restoringClientId === item.id}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {restoringClientId === item.id
+                      ? "Ripristino..."
+                      : "Ripristina"}
+                  </button>
+                  <PermanentDeleteButton
+                    resource="client"
+                    id={item.id}
+                    label={item.display_name}
+                    onDeleted={async () => {
+                      await Promise.all([loadTrashClients(), onRefresh()]);
+                    }}
+                    onMessage={setMessage}
+                  />
+                </div>
               </div>
             </article>
           ))}
