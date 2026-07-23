@@ -186,7 +186,10 @@ export default function Home() {
       setSessionChecked(true);
 
       if (session) {
-        setUserEmail(session.user.email ?? "");
+        setUserEmail(
+          String(session.user.user_metadata?.display_name ?? "").trim() ||
+            "Utente"
+        );
       }
     }
 
@@ -196,7 +199,10 @@ export default function Home() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setIsLoggedIn(Boolean(session));
-      setUserEmail(session?.user.email ?? "");
+      setUserEmail(
+        String(session?.user.user_metadata?.display_name ?? "").trim() ||
+          "Utente"
+      );
 
       if (!session) {
         setActiveSection("Dashboard");
@@ -773,7 +779,9 @@ export default function Home() {
           </nav>
 
           <div className="border-t border-neutral-200 p-4">
-            <p className="truncate text-xs text-neutral-500">{userEmail}</p>
+            <p className="truncate text-sm font-medium text-slate-700">
+              Benvenuto, {userEmail}
+            </p>
             <button
               type="button"
               onClick={handleLogout}
@@ -1041,8 +1049,8 @@ export default function Home() {
             </nav>
 
             <div className="border-t border-neutral-200 p-4">
-              <p className="truncate text-xs text-neutral-500">
-                {userEmail}
+              <p className="truncate text-sm font-medium text-slate-700">
+                Benvenuto, {userEmail}
               </p>
 
               <button
