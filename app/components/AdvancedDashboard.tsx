@@ -35,6 +35,7 @@ export default function AdvancedDashboard({
   onOpenClient,
   onOpenCounterparty,
   onOpenSection,
+  onOpenInvoice,
 }: {
   events: CalendarEvent[];
   cases: CaseRecord[];
@@ -43,6 +44,7 @@ export default function AdvancedDashboard({
   onOpenClient: (clientId: number) => void;
   onOpenCounterparty: (counterpartyId: number) => void;
   onOpenSection: (section: string) => void;
+  onOpenInvoice: (invoiceId: number) => void;
 }) {
   const [updates, setUpdates] = useState<UpdateRecord[]>([]);
   const [message, setMessage] = useState("");
@@ -179,6 +181,7 @@ export default function AdvancedDashboard({
         onOpenClient={onOpenClient}
         onOpenCounterparty={onOpenCounterparty}
         onOpenSection={onOpenSection}
+        onOpenInvoice={onOpenInvoice}
         compact
       />
 

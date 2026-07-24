@@ -11,6 +11,7 @@ type SearchResult = {
   caseId?: number;
   clientId?: number;
   counterpartyId?: number;
+  invoiceId?: number;
 };
 
 export default function GlobalSearchPage({
@@ -18,12 +19,14 @@ export default function GlobalSearchPage({
   onOpenClient,
   onOpenCounterparty,
   onOpenSection,
+  onOpenInvoice,
   compact = false,
 }: {
   onOpenCase: (caseId: number) => void;
   onOpenClient: (clientId: number) => void;
   onOpenCounterparty: (counterpartyId: number) => void;
   onOpenSection: (section: string) => void;
+  onOpenInvoice: (invoiceId: number) => void;
   compact?: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -216,6 +219,7 @@ export default function GlobalSearchPage({
           .filter(Boolean)
           .join(" · "),
         caseId: item.case_id ?? undefined,
+        invoiceId: item.id,
       });
     }
 
@@ -248,6 +252,10 @@ export default function GlobalSearchPage({
   }
 
   function openResult(result: SearchResult) {
+    if (result.invoiceId) {
+      onOpenInvoice(result.invoiceId);
+      return;
+    }
     if (result.caseId) {
       onOpenCase(result.caseId);
       return;
@@ -339,7 +347,9 @@ export default function GlobalSearchPage({
               </div>
 
               <span className="rounded-xl border border-neutral-300 px-3 py-2 text-xs">
-                {result.caseId
+                {result.invoiceId
+                  ? "Apri fattura"
+                  : result.caseId
                   ? "Apri pratica"
                   : result.clientId
                     ? "Apri cliente"

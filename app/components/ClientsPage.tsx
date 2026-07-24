@@ -45,7 +45,7 @@ export type ClientCase = {
   status: string | null;
 };
 
-type ClientInvoice = {
+export type ClientInvoice = {
   id: number;
   invoice_number: string;
   issue_date: string | null;
@@ -76,6 +76,7 @@ export default function ClientsPage({
   onClientsChanged,
   onOpenCase,
   onAddCase,
+  onOpenInvoice,
   onClientDetailClose,
 }: {
   clients: ClientRecord[];
@@ -85,6 +86,7 @@ export default function ClientsPage({
   onClientsChanged: () => Promise<void>;
   onOpenCase: (caseId: number) => void;
   onAddCase: (clientId: number) => void;
+  onOpenInvoice: (invoiceId: number) => void;
   onClientDetailClose?: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -493,6 +495,7 @@ export default function ClientsPage({
           message={message}
           onOpenCase={onOpenCase}
           onAddCase={() => onAddCase(selectedClient.id)}
+          onOpenInvoice={onOpenInvoice}
         />
         {clientFormModal}
       </>
@@ -656,6 +659,7 @@ function ClientDetail({
   message,
   onOpenCase,
   onAddCase,
+  onOpenInvoice,
 }: {
   client: ClientRecord;
   cases: ClientCase[];
@@ -666,6 +670,7 @@ function ClientDetail({
   message: string;
   onOpenCase: (caseId: number) => void;
   onAddCase: () => void;
+  onOpenInvoice: (invoiceId: number) => void;
 }) {
   const [invoices, setInvoices] = useState<ClientInvoice[]>([]);
   const [selectedInvoice, setSelectedInvoice] =
@@ -953,18 +958,21 @@ function ClientDetail({
         <InvoiceSummaryModal
           invoice={selectedInvoice}
           onClose={() => setSelectedInvoice(null)}
+          onEdit={() => onOpenInvoice(selectedInvoice.id)}
         />
       )}
     </div>
   );
 }
 
-function InvoiceSummaryModal({
+export function InvoiceSummaryModal({
   invoice,
   onClose,
+  onEdit,
 }: {
   invoice: ClientInvoice;
   onClose: () => void;
+  onEdit?: () => void;
 }) {
   const rows = [
     ["Onorari", formatMoney(invoice.taxable_amount)],
@@ -1036,6 +1044,18 @@ function InvoiceSummaryModal({
           <div className="mt-5 rounded-xl bg-neutral-50 p-4 text-sm">
             {invoice.description && <p>{invoice.description}</p>}
             {invoice.notes && <p className="mt-2 text-neutral-600">{invoice.notes}</p>}
+          </div>
+        )}
+
+        {onEdit && (
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={onEdit}
+              className="rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white"
+            >
+              Modifica fattura
+            </button>
           </div>
         )}
       </section>

@@ -127,6 +127,9 @@ export default function Home() {
   >(null);
   const [newCaseClientId, setNewCaseClientId] = useState<number | null>(null);
   const [editCaseId, setEditCaseId] = useState<number | null>(null);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(
+    null
+  );
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
@@ -673,6 +676,12 @@ export default function Home() {
     setActiveSection("Controparti");
   }
 
+  function openInvoiceById(invoiceId: number) {
+    setSelectedInvoiceId(invoiceId);
+    setActiveSection("Fatture");
+    setMobileMenuOpen(false);
+  }
+
   function openCaseEditor(caseId: number) {
     setSelectedCase(null);
     setEditCaseId(caseId);
@@ -747,7 +756,7 @@ export default function Home() {
         <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-[#f8faff] lg:flex">
           <div className="flex h-28 items-center justify-center border-b border-slate-200 px-5">
             <img
-              src="/logo-zaza-dellali.svg"
+              src="/logo-zaza-dellali.png"
               alt="Studio Legale Zaza Dell’Ali"
               className="h-24 w-24"
             />
@@ -847,6 +856,7 @@ export default function Home() {
                 onOpenClient={openClientById}
                 onOpenCounterparty={openCounterpartyById}
                 onOpenSection={setActiveSection}
+                onOpenInvoice={openInvoiceById}
               />
             )}
 
@@ -856,6 +866,7 @@ export default function Home() {
                 onOpenClient={openClientById}
                 onOpenCounterparty={openCounterpartyById}
                 onOpenSection={setActiveSection}
+                onOpenInvoice={openInvoiceById}
               />
             )}
 
@@ -896,6 +907,7 @@ export default function Home() {
                 onClientsChanged={refreshAllData}
                 onOpenCase={openCaseById}
                 onAddCase={openNewCaseForClient}
+                onOpenInvoice={openInvoiceById}
                 onClientDetailClose={() => setSelectedClientId(null)}
               />
             )}
@@ -916,6 +928,8 @@ export default function Home() {
                 studioId={studioId}
                 clients={clients}
                 cases={cases}
+                initialInvoiceId={selectedInvoiceId}
+                onInitialInvoiceHandled={() => setSelectedInvoiceId(null)}
               />
             )}
 
@@ -1008,7 +1022,7 @@ export default function Home() {
           <aside className="relative flex h-full w-[85%] max-w-sm flex-col bg-[#f8faff] shadow-2xl">
             <div className="flex h-28 items-center justify-between border-b border-slate-200 px-5">
               <img
-                src="/logo-zaza-dellali.svg"
+                src="/logo-zaza-dellali.png"
                 alt="Studio Legale Zaza Dell’Ali"
                 className="h-24 w-24"
               />

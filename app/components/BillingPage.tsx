@@ -8,7 +8,11 @@ import {
   useState,
 } from "react";
 import { supabase } from "../../lib/supabase";
-import type { ClientRecord } from "./ClientsPage";
+import {
+  InvoiceSummaryModal,
+  type ClientInvoice,
+  type ClientRecord,
+} from "./ClientsPage";
 import type { CaseRecord } from "./CasesPage";
 
 type ProfileOption = {
@@ -150,10 +154,14 @@ export default function BillingPage({
   studioId,
   clients,
   cases,
+  initialInvoiceId = null,
+  onInitialInvoiceHandled,
 }: {
   studioId: string;
   clients: ClientRecord[];
   cases: CaseRecord[];
+  initialInvoiceId?: number | null;
+  onInitialInvoiceHandled?: () => void;
 }) {
   const [profiles, setProfiles] = useState<ProfileOption[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
@@ -171,6 +179,8 @@ export default function BillingPage({
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<number[]>([]);
+  const [previewInvoice, setPreviewInvoice] =
+    useState<InvoiceRecord | null>(null);
 
   async function loadBillingData() {
     setLoading(true);
@@ -212,6 +222,13 @@ export default function BillingPage({
     setProfiles((profileResult.data ?? []) as ProfileOption[]);
     setLoading(false);
   }
+
+  useEffect(() => {
+    if (!initialInvoiceId || invoices.length === 0) return;
+    const invoice = invoices.find((item) => item.id === initialInvoiceId);
+    if (invoice) setPreviewInvoice(invoice);
+    onInitialInvoiceHandled?.();
+  }, [initialInvoiceId, invoices, onInitialInvoiceHandled]);
 
   const loadBillingDataEffect = useEffectEvent(loadBillingData);
 
@@ -581,6 +598,7 @@ export default function BillingPage({
                   (payment) => payment.invoice_id === item.id
                 )}
                 onEdit={() => openEditInvoice(item)}
+                onView={() => setPreviewInvoice(item)}
                 onPayment={() => openPayment(item)}
                 selected={selectedInvoiceIds.includes(item.id)}
                 onToggleSelected={() => toggleInvoiceSelection(item.id)}
@@ -651,6 +669,7 @@ export default function BillingPage({
                     (payment) => payment.invoice_id === item.id
                   )}
                   onEdit={() => openEditInvoice(item)}
+                  onView={() => setPreviewInvoice(item)}
                   selected={selectedInvoiceIds.includes(item.id)}
                   onToggleSelected={() => toggleInvoiceSelection(item.id)}
                 />
@@ -680,6 +699,18 @@ export default function BillingPage({
         />
       )}
 
+      {previewInvoice && !showInvoiceForm && (
+        <InvoiceSummaryModal
+          invoice={previewInvoice as ClientInvoice}
+          onClose={() => setPreviewInvoice(null)}
+          onEdit={() => {
+            const invoice = previewInvoice;
+            setPreviewInvoice(null);
+            openEditInvoice(invoice);
+          }}
+        />
+      )}
+
       {showPaymentForm && (
         <PaymentModal
           form={paymentForm}
@@ -704,6 +735,7 @@ function InvoiceCard({
   cases,
   payments,
   onEdit,
+  onView,
   onPayment,
   selected,
   onToggleSelected,
@@ -713,6 +745,7 @@ function InvoiceCard({
   cases: CaseRecord[];
   payments: PaymentRecord[];
   onEdit: () => void;
+  onView: () => void;
   onPayment?: () => void;
   selected: boolean;
   onToggleSelected: () => void;
@@ -737,9 +770,13 @@ function InvoiceCard({
           />
           <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-lg font-semibold">
+            <button
+              type="button"
+              onClick={onView}
+              className="text-left text-lg font-semibold text-[#17376f] underline decoration-[#17376f]/30 underline-offset-4"
+            >
               Fattura n. {invoice.invoice_number}
-            </h4>
+            </button>
             <StatusBadge status={invoice.status} />
           </div>
 
