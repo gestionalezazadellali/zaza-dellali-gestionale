@@ -522,6 +522,33 @@ export default function BillingPage({
 
         {message && <p className="mt-4 text-sm">{message}</p>}
 
+        {unpaidInvoices.length > 0 && (
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedInvoiceIds((current) =>
+                unpaidInvoices.every((invoice) => current.includes(invoice.id))
+                  ? current.filter(
+                      (id) => !unpaidInvoices.some((invoice) => invoice.id === id)
+                    )
+                  : Array.from(
+                      new Set([
+                        ...current,
+                        ...unpaidInvoices.map((invoice) => invoice.id),
+                      ])
+                    )
+              )
+            }
+            className="mt-4 rounded-xl border border-neutral-300 px-4 py-2 text-sm"
+          >
+            {unpaidInvoices.every((invoice) =>
+              selectedInvoiceIds.includes(invoice.id)
+            )
+              ? "Deseleziona tutte"
+              : "Seleziona tutte"}
+          </button>
+        )}
+
         {selectedInvoiceIds.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-neutral-100 p-3 text-sm">
             <span>
@@ -583,6 +610,32 @@ export default function BillingPage({
 
         {showPaid && (
           <div className="mt-6 space-y-4">
+            {paidInvoices.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedInvoiceIds((current) =>
+                    paidInvoices.every((invoice) => current.includes(invoice.id))
+                      ? current.filter(
+                          (id) => !paidInvoices.some((invoice) => invoice.id === id)
+                        )
+                      : Array.from(
+                          new Set([
+                            ...current,
+                            ...paidInvoices.map((invoice) => invoice.id),
+                          ])
+                        )
+                  )
+                }
+                className="rounded-xl border border-neutral-300 px-4 py-2 text-sm"
+              >
+                {paidInvoices.every((invoice) =>
+                  selectedInvoiceIds.includes(invoice.id)
+                )
+                  ? "Deseleziona tutte"
+                  : "Seleziona tutte"}
+              </button>
+            )}
             {paidInvoices.length === 0 ? (
               <p className="text-sm text-neutral-500">
                 Nessuna fattura saldata.

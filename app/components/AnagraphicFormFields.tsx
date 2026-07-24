@@ -14,6 +14,8 @@ export type AnagraphicFormValues = {
   city: string;
   postal_code: string;
   province: string;
+  birth_place: string;
+  birth_date: string;
   notes: string;
 };
 
@@ -33,15 +35,19 @@ export const emptyAnagraphicForm: AnagraphicFormValues = {
   city: "",
   postal_code: "",
   province: "",
+  birth_place: "",
+  birth_date: "",
   notes: "",
 };
 
 export default function AnagraphicFormFields({
   values,
   onChange,
+  showBirthFields = false,
 }: {
   values: AnagraphicFormValues;
   onChange: (field: keyof AnagraphicFormValues, value: string) => void;
+  showBirthFields?: boolean;
 }) {
   return (
     <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -80,6 +86,23 @@ export default function AnagraphicFormFields({
         value={values.vat_number}
         onChange={(value) => onChange("vat_number", value)}
       />
+
+      {showBirthFields && (
+        <>
+          <AnagraphicInput
+            label="Luogo di nascita"
+            value={values.birth_place}
+            onChange={(value) => onChange("birth_place", value)}
+          />
+
+          <AnagraphicInput
+            label="Data di nascita"
+            type="date"
+            value={values.birth_date}
+            onChange={(value) => onChange("birth_date", value)}
+          />
+        </>
+      )}
 
       <AnagraphicInput
         label="Email"

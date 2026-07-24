@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import PermanentDeleteButton from "./PermanentDeleteButton";
+import { permanentlyDeleteTrashItem } from "../../lib/permanent-delete";
 
 type TrashClient = {
   id: number;
@@ -26,6 +27,8 @@ export default function TrashClientsPage({
     null
   );
   const [message, setMessage] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkWorking, setBulkWorking] = useState(false);
 
   const loadTrashClients = useCallback(async () => {
     const { data, error } = await supabase
@@ -40,6 +43,9 @@ export default function TrashClientsPage({
 
     if (error) throw error;
     setClients((data ?? []) as TrashClient[]);
+    setSelectedIds((current) =>
+      current.filter((id) => (data ?? []).some((item) => item.id === id))
+    );
   }, [studioId]);
 
   useEffect(() => {
@@ -131,6 +137,28 @@ export default function TrashClientsPage({
     }
   }
 
+  async function deleteSelected() {
+    if (!selectedIds.length) return;
+    if (
+      !window.confirm(
+        `Eliminare definitivamente ${selectedIds.length} clienti selezionati? L’operazione è irreversibile.`
+      )
+    )
+      return;
+    setBulkWorking(true);
+    try {
+      for (const id of selectedIds) {
+        await permanentlyDeleteTrashItem("client", id);
+      }
+      await Promise.all([loadTrashClients(), onRefresh()]);
+      setMessage("Clienti selezionati eliminati definitivamente.");
+    } catch (error) {
+      setMessage(error instanceof Error ? `Errore: ${error.message}` : "Eliminazione non riuscita.");
+    } finally {
+      setBulkWorking(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -156,13 +184,39 @@ export default function TrashClientsPage({
         </section>
       ) : (
         <section className="grid gap-4">
+          <BulkSelectionBar
+            allSelected={selectedIds.length === clients.length}
+            selectedCount={selectedIds.length}
+            onToggleAll={() =>
+              setSelectedIds(
+                selectedIds.length === clients.length
+                  ? []
+                  : clients.map((item) => item.id)
+              )
+            }
+            onDelete={() => void deleteSelected()}
+            working={bulkWorking}
+          />
           {clients.map((item) => (
             <article
               key={item.id}
               className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+                <div className="flex min-w-0 gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={() =>
+                      setSelectedIds((current) =>
+                        current.includes(item.id)
+                          ? current.filter((id) => id !== item.id)
+                          : [...current, item.id]
+                      )
+                    }
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-neutral-300"
+                  />
+                  <div>
                   <h3 className="text-lg font-semibold">
                     {item.display_name}
                   </h3>
@@ -184,6 +238,7 @@ export default function TrashClientsPage({
                       Motivo: {item.delete_reason}
                     </p>
                   )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -212,6 +267,37 @@ export default function TrashClientsPage({
           ))}
         </section>
       )}
+    </div>
+  );
+}
+
+function BulkSelectionBar({
+  allSelected,
+  selectedCount,
+  onToggleAll,
+  onDelete,
+  working,
+}: {
+  allSelected: boolean;
+  selectedCount: number;
+  onToggleAll: () => void;
+  onDelete: () => void;
+  working: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" checked={allSelected} onChange={onToggleAll} />
+        Seleziona tutti
+      </label>
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={!selectedCount || working}
+        className="rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
+      >
+        {working ? "Eliminazione..." : `Elimina definitivamente (${selectedCount})`}
+      </button>
     </div>
   );
 }

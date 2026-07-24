@@ -349,6 +349,23 @@ export default function CounterpartiesPage({
             ? "Ricerca in corso..."
             : `Anagrafiche trovate: ${counterparties.length}`}
         </p>
+        <button
+          type="button"
+          onClick={() =>
+            setSelectedIds((current) =>
+              current.length === counterparties.length
+                ? []
+                : counterparties.map((item) => item.id)
+            )
+          }
+          disabled={counterparties.length === 0}
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm disabled:opacity-40"
+        >
+          {selectedIds.length === counterparties.length &&
+          counterparties.length > 0
+            ? "Deseleziona tutte"
+            : "Seleziona tutte"}
+        </button>
         {message && <p className="text-sm text-neutral-600">{message}</p>}
       </div>
 
@@ -687,6 +704,8 @@ function formFromCounterparty(
     city: item.city ?? "",
     postal_code: item.postal_code ?? "",
     province: item.province ?? "",
+    birth_place: "",
+    birth_date: "",
     notes: item.notes ?? "",
   };
 }

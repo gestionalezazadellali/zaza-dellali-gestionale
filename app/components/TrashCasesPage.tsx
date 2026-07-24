@@ -7,6 +7,7 @@ import TrashCounterpartiesPage from "./TrashCounterpartiesPage";
 import TrashEventsPage from "./TrashEventsPage";
 import TrashUsersPage from "./TrashUsersPage";
 import PermanentDeleteButton from "./PermanentDeleteButton";
+import { permanentlyDeleteTrashItem } from "../../lib/permanent-delete";
 
 type TrashCase = {
   id: number;
@@ -29,6 +30,8 @@ export default function TrashCasesPage({
   const [loading, setLoading] = useState(true);
   const [restoringCaseId, setRestoringCaseId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkWorking, setBulkWorking] = useState(false);
 
   const loadTrashCases = useCallback(async () => {
     const { data, error } = await supabase
@@ -42,6 +45,9 @@ export default function TrashCasesPage({
 
     if (error) throw error;
     setCases((data ?? []) as TrashCase[]);
+    setSelectedIds((current) =>
+      current.filter((id) => (data ?? []).some((item) => item.id === id))
+    );
   }, [studioId]);
 
   useEffect(() => {
@@ -100,6 +106,21 @@ export default function TrashCasesPage({
     }
   }
 
+  async function deleteSelected() {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Eliminare definitivamente ${selectedIds.length} pratiche selezionate?`)) return;
+    setBulkWorking(true);
+    try {
+      for (const id of selectedIds) await permanentlyDeleteTrashItem("case", id);
+      await Promise.all([loadTrashCases(), onRefresh()]);
+      setMessage("Pratiche selezionate eliminate definitivamente.");
+    } catch (error) {
+      setMessage(error instanceof Error ? `Errore: ${error.message}` : "Eliminazione non riuscita.");
+    } finally {
+      setBulkWorking(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -125,13 +146,46 @@ export default function TrashCasesPage({
         </section>
       ) : (
         <section className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={selectedIds.length === cases.length}
+                onChange={() =>
+                  setSelectedIds(selectedIds.length === cases.length ? [] : cases.map((item) => item.id))
+                }
+              />
+              Seleziona tutti
+            </label>
+            <button
+              type="button"
+              onClick={() => void deleteSelected()}
+              disabled={!selectedIds.length || bulkWorking}
+              className="rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
+            >
+              {bulkWorking ? "Eliminazione..." : `Elimina definitivamente (${selectedIds.length})`}
+            </button>
+          </div>
           {cases.map((item) => (
             <article
               key={item.id}
               className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+                <div className="flex min-w-0 gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={() =>
+                      setSelectedIds((current) =>
+                        current.includes(item.id)
+                          ? current.filter((id) => id !== item.id)
+                          : [...current, item.id]
+                      )
+                    }
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-neutral-300"
+                  />
+                  <div>
                   <h3 className="text-lg font-semibold">
                     {item.title ||
                       item.claimant_name_raw ||
@@ -151,6 +205,7 @@ export default function TrashCasesPage({
                       Motivo: {item.delete_reason}
                     </p>
                   )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">

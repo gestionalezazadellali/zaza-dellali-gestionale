@@ -25,6 +25,8 @@ export type ClientRecord = {
   city: string | null;
   postal_code: string | null;
   province: string | null;
+  birth_place: string | null;
+  birth_date: string | null;
   notes: string | null;
   needs_review: boolean;
 };
@@ -41,6 +43,25 @@ export type ClientCase = {
   rg_number: string | null;
   judge_name: string | null;
   status: string | null;
+};
+
+type ClientInvoice = {
+  id: number;
+  invoice_number: string;
+  issue_date: string | null;
+  due_date: string | null;
+  description: string | null;
+  taxable_amount: number;
+  general_expenses_amount: number;
+  cpa_amount: number;
+  tax_amount: number;
+  exempt_expenses_amount: number;
+  withholding_amount: number;
+  total_amount: number;
+  paid_amount: number;
+  status: string;
+  issuing_lawyer_name: string | null;
+  notes: string | null;
 };
 
 type ClientForm = AnagraphicFormValues;
@@ -115,6 +136,8 @@ export default function ClientsPage({
             city,
             postal_code,
             province,
+            birth_place,
+            birth_date,
             notes,
             needs_review
           `
@@ -213,6 +236,8 @@ export default function ClientsPage({
       city: client.city ?? "",
       postal_code: client.postal_code ?? "",
       province: client.province ?? "",
+      birth_place: client.birth_place ?? "",
+      birth_date: client.birth_date ?? "",
       notes: client.notes ?? "",
     });
 
@@ -258,6 +283,8 @@ export default function ClientsPage({
       city: form.city.trim() || null,
       postal_code: form.postal_code.trim() || null,
       province: form.province.trim() || null,
+      birth_place: form.birth_place.trim() || null,
+      birth_date: form.birth_date || null,
       notes: form.notes.trim() || null,
       needs_review: false,
       active: true,
@@ -505,6 +532,24 @@ export default function ClientsPage({
           Anagrafiche trovate: {filteredClients.length}
         </p>
 
+        <button
+          type="button"
+          onClick={() =>
+            setSelectedClientIds((current) =>
+              current.length === filteredClients.length
+                ? []
+                : filteredClients.map((client) => client.id)
+            )
+          }
+          disabled={filteredClients.length === 0}
+          className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm disabled:opacity-40"
+        >
+          {selectedClientIds.length === filteredClients.length &&
+          filteredClients.length > 0
+            ? "Deseleziona tutti"
+            : "Seleziona tutti"}
+        </button>
+
         {message && (
           <p className="text-sm text-neutral-600">{message}</p>
         )}
@@ -622,6 +667,31 @@ function ClientDetail({
   onOpenCase: (caseId: number) => void;
   onAddCase: () => void;
 }) {
+  const [invoices, setInvoices] = useState<ClientInvoice[]>([]);
+  const [selectedInvoice, setSelectedInvoice] =
+    useState<ClientInvoice | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInvoices() {
+      const { data } = await supabase
+        .from("invoices")
+        .select(
+          "id, invoice_number, issue_date, due_date, description, taxable_amount, general_expenses_amount, cpa_amount, tax_amount, exempt_expenses_amount, withholding_amount, total_amount, paid_amount, status, issuing_lawyer_name, notes"
+        )
+        .eq("client_contact_id", client.id)
+        .order("issue_date", { ascending: false });
+
+      if (!cancelled) setInvoices((data ?? []) as ClientInvoice[]);
+    }
+
+    void loadInvoices();
+    return () => {
+      cancelled = true;
+    };
+  }, [client.id]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-3">
@@ -708,6 +778,14 @@ function ClientDetail({
             <ClientDetailRow
               label="Partita IVA"
               value={client.vat_number}
+            />
+            <ClientDetailRow
+              label="Luogo di nascita"
+              value={client.birth_place}
+            />
+            <ClientDetailRow
+              label="Data di nascita"
+              value={formatBirthDate(client.birth_date)}
             />
             <ClientDetailRow
               label="Qualifica"
@@ -812,6 +890,155 @@ function ClientDetail({
           )}
         </div>
       </section>
+
+      <section className="rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+        <h4 className="text-lg font-semibold">Fatture del cliente</h4>
+        <p className="mt-1 text-sm text-neutral-500">
+          Clicca sul numero per visualizzare il riepilogo.
+        </p>
+
+        {invoices.length === 0 ? (
+          <p className="mt-5 text-sm text-neutral-500">
+            Nessuna fattura collegata.
+          </p>
+        ) : (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="border-b border-neutral-200 text-neutral-500">
+                <tr>
+                  <th className="px-3 py-3 font-medium">Numero</th>
+                  <th className="px-3 py-3 font-medium">Data</th>
+                  <th className="px-3 py-3 font-medium">Stato</th>
+                  <th className="px-3 py-3 text-right font-medium">Totale</th>
+                  <th className="px-3 py-3 text-right font-medium">Residuo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((invoice) => (
+                  <tr key={invoice.id} className="border-b border-neutral-100">
+                    <td className="px-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInvoice(invoice)}
+                        className="font-semibold text-[#17376f] underline decoration-[#17376f]/30 underline-offset-4"
+                      >
+                        {invoice.invoice_number}
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">{formatDate(invoice.issue_date)}</td>
+                    <td className="px-3 py-3 capitalize">
+                      {invoice.status.replaceAll("_", " ")}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      {formatMoney(invoice.total_amount)}
+                    </td>
+                    <td className="px-3 py-3 text-right">
+                      {formatMoney(
+                        Math.max(
+                          Number(invoice.total_amount || 0) -
+                            Number(invoice.paid_amount || 0),
+                          0
+                        )
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {selectedInvoice && (
+        <InvoiceSummaryModal
+          invoice={selectedInvoice}
+          onClose={() => setSelectedInvoice(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function InvoiceSummaryModal({
+  invoice,
+  onClose,
+}: {
+  invoice: ClientInvoice;
+  onClose: () => void;
+}) {
+  const rows = [
+    ["Onorari", formatMoney(invoice.taxable_amount)],
+    ["Spese generali 15%", formatMoney(invoice.general_expenses_amount)],
+    ["CPA 4%", formatMoney(invoice.cpa_amount)],
+    ["IVA", formatMoney(invoice.tax_amount)],
+    ["Spese esenti", formatMoney(invoice.exempt_expenses_amount)],
+    ["Ritenuta d’acconto", `− ${formatMoney(invoice.withholding_amount)}`],
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Riepilogo fattura ${invoice.invoice_number}`}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-neutral-200 pb-4">
+          <div>
+            <p className="text-sm text-neutral-500">Riepilogo fattura</p>
+            <h3 className="mt-1 text-xl font-semibold">
+              Fattura n. {invoice.invoice_number}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+          >
+            Chiudi
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <ClientInfoCard label="Data emissione" value={formatDate(invoice.issue_date)} />
+          <ClientInfoCard label="Scadenza" value={formatDate(invoice.due_date)} />
+          <ClientInfoCard
+            label="Stato"
+            value={invoice.status.replaceAll("_", " ")}
+          />
+          <ClientInfoCard
+            label="Emittente"
+            value={invoice.issuing_lawyer_name}
+          />
+        </div>
+
+        <dl className="mt-5 divide-y divide-neutral-100 rounded-xl border border-neutral-200">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-4 px-4 py-3 text-sm">
+              <dt className="text-neutral-600">{label}</dt>
+              <dd className="font-medium">{value}</dd>
+            </div>
+          ))}
+          <div className="flex justify-between gap-4 bg-neutral-50 px-4 py-4">
+            <dt className="font-semibold">Totale</dt>
+            <dd className="text-lg font-semibold">{formatMoney(invoice.total_amount)}</dd>
+          </div>
+          <div className="flex justify-between gap-4 px-4 py-3 text-sm">
+            <dt className="text-neutral-600">Incassato</dt>
+            <dd className="font-medium">{formatMoney(invoice.paid_amount)}</dd>
+          </div>
+        </dl>
+
+        {(invoice.description || invoice.notes) && (
+          <div className="mt-5 rounded-xl bg-neutral-50 p-4 text-sm">
+            {invoice.description && <p>{invoice.description}</p>}
+            {invoice.notes && <p className="mt-2 text-neutral-600">{invoice.notes}</p>}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -851,7 +1078,11 @@ function ClientFormModal({
           </button>
         </div>
 
-        <AnagraphicFormFields values={form} onChange={onChange} />
+        <AnagraphicFormFields
+          values={form}
+          onChange={onChange}
+          showBirthFields
+        />
 
         {message && (
           <p className="mt-5 text-sm text-neutral-600">
@@ -913,4 +1144,31 @@ function ClientDetailRow({
       </dd>
     </div>
   );
+}
+
+function formatBirthDate(value: string | null | undefined) {
+  if (!value) return null;
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(`${value}T12:00:00`));
+}
+
+function formatMoney(value: number | null | undefined) {
+  return new Intl.NumberFormat("it-IT", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Non indicata";
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(`${value}T12:00:00`));
 }

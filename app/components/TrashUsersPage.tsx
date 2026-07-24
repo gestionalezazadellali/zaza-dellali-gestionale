@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import PermanentDeleteButton from "./PermanentDeleteButton";
+import { permanentlyDeleteTrashItem } from "../../lib/permanent-delete";
 
 type TrashUser = {
   id: string;
@@ -28,6 +29,8 @@ export default function TrashUsersPage({
   const [loading, setLoading] = useState(true);
   const [restoringUserId, setRestoringUserId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkWorking, setBulkWorking] = useState(false);
 
   const loadTrashUsers = useCallback(async () => {
     const { data, error } = await supabase
@@ -41,6 +44,9 @@ export default function TrashUsersPage({
 
     if (error) throw error;
     setUsers((data ?? []) as TrashUser[]);
+    setSelectedIds((current) =>
+      current.filter((id) => (data ?? []).some((item) => item.id === id))
+    );
   }, [studioId]);
 
   useEffect(() => {
@@ -99,6 +105,21 @@ export default function TrashUsersPage({
     }
   }
 
+  async function deleteSelected() {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Eliminare definitivamente ${selectedIds.length} utenti selezionati?`)) return;
+    setBulkWorking(true);
+    try {
+      for (const id of selectedIds) await permanentlyDeleteTrashItem("user", id);
+      await Promise.all([loadTrashUsers(), onRefresh()]);
+      setMessage("Utenti selezionati eliminati definitivamente.");
+    } catch (error) {
+      setMessage(error instanceof Error ? `Errore: ${error.message}` : "Eliminazione non riuscita.");
+    } finally {
+      setBulkWorking(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -124,13 +145,48 @@ export default function TrashUsersPage({
         </section>
       ) : (
         <section className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={selectedIds.length === users.length}
+                onChange={() =>
+                  setSelectedIds(
+                    selectedIds.length === users.length ? [] : users.map((item) => item.id)
+                  )
+                }
+              />
+              Seleziona tutti
+            </label>
+            <button
+              type="button"
+              onClick={() => void deleteSelected()}
+              disabled={!selectedIds.length || bulkWorking}
+              className="rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
+            >
+              {bulkWorking ? "Eliminazione..." : `Elimina definitivamente (${selectedIds.length})`}
+            </button>
+          </div>
           {users.map((user) => (
             <article
               key={user.id}
               className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+                <div className="flex min-w-0 gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(user.id)}
+                    onChange={() =>
+                      setSelectedIds((current) =>
+                        current.includes(user.id)
+                          ? current.filter((id) => id !== user.id)
+                          : [...current, user.id]
+                      )
+                    }
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-neutral-300"
+                  />
+                  <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-lg font-semibold">
                       {getUserName(user)}
@@ -155,6 +211,7 @@ export default function TrashUsersPage({
                       Motivo: {user.delete_reason}
                     </p>
                   )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">

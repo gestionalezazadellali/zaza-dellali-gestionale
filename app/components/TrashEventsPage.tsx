@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import PermanentDeleteButton from "./PermanentDeleteButton";
+import { permanentlyDeleteTrashItem } from "../../lib/permanent-delete";
 
 type TrashEvent = {
   id: number;
@@ -30,6 +31,8 @@ export default function TrashEventsPage({
   const [loading, setLoading] = useState(true);
   const [restoringEventId, setRestoringEventId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [bulkWorking, setBulkWorking] = useState(false);
 
   const loadTrashEvents = useCallback(async () => {
     const { data, error } = await supabase
@@ -43,6 +46,9 @@ export default function TrashEventsPage({
 
     if (error) throw error;
     setEvents((data ?? []) as TrashEvent[]);
+    setSelectedIds((current) =>
+      current.filter((id) => (data ?? []).some((item) => item.id === id))
+    );
   }, [studioId]);
 
   useEffect(() => {
@@ -101,6 +107,21 @@ export default function TrashEventsPage({
     }
   }
 
+  async function deleteSelected() {
+    if (!selectedIds.length) return;
+    if (!window.confirm(`Eliminare definitivamente ${selectedIds.length} eventi selezionati?`)) return;
+    setBulkWorking(true);
+    try {
+      for (const id of selectedIds) await permanentlyDeleteTrashItem("event", id);
+      await Promise.all([loadTrashEvents(), onRefresh()]);
+      setMessage("Eventi selezionati eliminati definitivamente.");
+    } catch (error) {
+      setMessage(error instanceof Error ? `Errore: ${error.message}` : "Eliminazione non riuscita.");
+    } finally {
+      setBulkWorking(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl border border-neutral-200 bg-white p-8">
@@ -126,13 +147,46 @@ export default function TrashEventsPage({
         </section>
       ) : (
         <section className="grid gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-white p-4">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={selectedIds.length === events.length}
+                onChange={() =>
+                  setSelectedIds(selectedIds.length === events.length ? [] : events.map((item) => item.id))
+                }
+              />
+              Seleziona tutti
+            </label>
+            <button
+              type="button"
+              onClick={() => void deleteSelected()}
+              disabled={!selectedIds.length || bulkWorking}
+              className="rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-40"
+            >
+              {bulkWorking ? "Eliminazione..." : `Elimina definitivamente (${selectedIds.length})`}
+            </button>
+          </div>
           {events.map((item) => (
             <article
               key={item.id}
               className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
+                <div className="flex min-w-0 gap-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(item.id)}
+                    onChange={() =>
+                      setSelectedIds((current) =>
+                        current.includes(item.id)
+                          ? current.filter((id) => id !== item.id)
+                          : [...current, item.id]
+                      )
+                    }
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-neutral-300"
+                  />
+                  <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-lg font-semibold">{item.title}</h3>
                     <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-700">
@@ -159,6 +213,7 @@ export default function TrashEventsPage({
                       Motivo: {item.delete_reason}
                     </p>
                   )}
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2">

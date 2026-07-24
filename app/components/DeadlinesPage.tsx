@@ -332,6 +332,23 @@ export default function DeadlinesPage({
         {message && <p className="mt-4 text-sm">{message}</p>}
 
         <div className="mt-4 flex flex-wrap gap-2">
+          {visibleDeadlines.length > 0 && (
+            <button
+              type="button"
+              onClick={() =>
+                setSelectedIds((current) =>
+                  current.length === visibleDeadlines.length
+                    ? []
+                    : visibleDeadlines.map((item) => item.id)
+                )
+              }
+              className="mt-4 rounded-xl border border-neutral-300 px-4 py-2 text-sm"
+            >
+              {selectedIds.length === visibleDeadlines.length
+                ? "Deseleziona tutte"
+                : "Seleziona tutte"}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowExpired((current) => !current)}

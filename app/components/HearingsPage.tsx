@@ -93,6 +93,23 @@ export default function HearingsPage({
         <p className="mt-1 text-sm text-neutral-500">
           Udienze da oggi ai prossimi 15 giorni.
         </p>
+        {hearings.length > 0 && (
+          <button
+            type="button"
+            onClick={() =>
+              setSelectedIds((current) =>
+                current.length === hearings.length
+                  ? []
+                  : hearings.map((item) => item.id)
+              )
+            }
+            className="mt-4 rounded-xl border border-neutral-300 px-4 py-2 text-sm"
+          >
+            {selectedIds.length === hearings.length
+              ? "Deseleziona tutte"
+              : "Seleziona tutte"}
+          </button>
+        )}
         {selectedIds.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
             <button

@@ -249,6 +249,8 @@ export default function Home() {
             city,
             postal_code,
             province,
+            birth_place,
+            birth_date,
             notes,
             needs_review
           `
