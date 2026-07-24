@@ -75,6 +75,7 @@ export default function ClientsPage({
   initialClientId = null,
   onClientsChanged,
   onOpenCase,
+  onEditCase,
   onAddCase,
   onOpenInvoice,
   onClientDetailClose,
@@ -85,6 +86,7 @@ export default function ClientsPage({
   initialClientId?: number | null;
   onClientsChanged: () => Promise<void>;
   onOpenCase: (caseId: number) => void;
+  onEditCase: (caseId: number) => void;
   onAddCase: (clientId: number) => void;
   onOpenInvoice: (invoiceId: number) => void;
   onClientDetailClose?: () => void;
@@ -99,6 +101,7 @@ export default function ClientsPage({
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deletingClientId, setDeletingClientId] = useState<number | null>(null);
+  const [deletingCaseId, setDeletingCaseId] = useState<number | null>(null);
   const [selectedClientIds, setSelectedClientIds] = useState<number[]>([]);
   const [message, setMessage] = useState("");
 
@@ -422,6 +425,62 @@ export default function ClientsPage({
     }
   }
 
+  async function handleDeleteCase(caseRecord: ClientCase) {
+    const label =
+      caseRecord.title ||
+      caseRecord.claimant_name_raw ||
+      `Pratica n. ${caseRecord.id}`;
+    if (
+      !window.confirm(
+        `Vuoi spostare “${label}” nel cestino? Potrai ripristinarla successivamente.`
+      )
+    )
+      return;
+
+    setDeletingCaseId(caseRecord.id);
+    setMessage("");
+
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("Utente non autenticato.");
+
+      const { error } = await supabase
+        .from("cases")
+        .update({
+          deleted_at: new Date().toISOString(),
+          deleted_by: user.id,
+          delete_reason: "Eliminata dalla scheda generale del cliente",
+        })
+        .eq("id", caseRecord.id)
+        .eq("studio_id", studioId);
+      if (error) throw error;
+
+      await supabase.from("audit_log").insert({
+        studio_id: studioId,
+        user_id: user.id,
+        action: "delete",
+        entity_type: "pratica",
+        entity_id: String(caseRecord.id),
+        new_data: { deleted_at: new Date().toISOString(), source: "cliente" },
+      });
+
+      await onClientsChanged();
+      setMessage("Pratica spostata nel cestino.");
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? `Errore: ${error.message}`
+          : "Errore durante l’eliminazione della pratica."
+      );
+    } finally {
+      setDeletingCaseId(null);
+    }
+  }
+
   function toggleClientSelection(id: number) {
     setSelectedClientIds((current) =>
       current.includes(id)
@@ -494,6 +553,9 @@ export default function ClientsPage({
           deleting={deletingClientId === selectedClient.id}
           message={message}
           onOpenCase={onOpenCase}
+          onEditCase={onEditCase}
+          onDeleteCase={handleDeleteCase}
+          deletingCaseId={deletingCaseId}
           onAddCase={() => onAddCase(selectedClient.id)}
           onOpenInvoice={onOpenInvoice}
         />
@@ -658,6 +720,9 @@ function ClientDetail({
   deleting,
   message,
   onOpenCase,
+  onEditCase,
+  onDeleteCase,
+  deletingCaseId,
   onAddCase,
   onOpenInvoice,
 }: {
@@ -669,6 +734,9 @@ function ClientDetail({
   deleting: boolean;
   message: string;
   onOpenCase: (caseId: number) => void;
+  onEditCase: (caseId: number) => void;
+  onDeleteCase: (caseRecord: ClientCase) => Promise<void>;
+  deletingCaseId: number | null;
   onAddCase: () => void;
   onOpenInvoice: (invoiceId: number) => void;
 }) {
@@ -857,14 +925,16 @@ function ClientDetail({
             </p>
           ) : (
             cases.map((caseRecord) => (
-              <button
+              <article
                 key={caseRecord.id}
-                type="button"
-                onClick={() => onOpenCase(caseRecord.id)}
-                className="w-full rounded-xl border border-neutral-200 p-4 text-left transition hover:bg-neutral-50"
+                className="rounded-xl border border-neutral-200 p-4 transition hover:bg-neutral-50"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
+                  <button
+                    type="button"
+                    onClick={() => onOpenCase(caseRecord.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
                     <p className="font-medium">
                       {caseRecord.title ||
                         caseRecord.defendant_name_raw ||
@@ -883,14 +953,33 @@ function ClientDetail({
                         ? ` di ${caseRecord.court_city}`
                         : ""}
                     </p>
-                  </div>
+                  </button>
 
-                  <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs capitalize text-neutral-700">
-                    {caseRecord.status?.replaceAll("_", " ") ||
-                      "Stato non indicato"}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs capitalize text-neutral-700">
+                      {caseRecord.status?.replaceAll("_", " ") ||
+                        "Stato non indicato"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onEditCase(caseRecord.id)}
+                      className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-xs font-medium"
+                    >
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onDeleteCase(caseRecord)}
+                      disabled={deletingCaseId === caseRecord.id}
+                      className="rounded-lg border border-red-300 bg-white px-3 py-2 text-xs font-medium text-red-700 disabled:opacity-50"
+                    >
+                      {deletingCaseId === caseRecord.id
+                        ? "Eliminazione..."
+                        : "Elimina"}
+                    </button>
+                  </div>
                 </div>
-              </button>
+              </article>
             ))
           )}
         </div>

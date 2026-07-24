@@ -906,6 +906,7 @@ export default function Home() {
                 initialClientId={selectedClientId}
                 onClientsChanged={refreshAllData}
                 onOpenCase={openCaseById}
+                onEditCase={openCaseEditor}
                 onAddCase={openNewCaseForClient}
                 onOpenInvoice={openInvoiceById}
                 onClientDetailClose={() => setSelectedClientId(null)}
